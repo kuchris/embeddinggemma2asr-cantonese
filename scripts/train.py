@@ -59,9 +59,10 @@ model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, head=args
 print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
       f"字典 {len(vocab['units'])}，head={args.head}，train shard {len(train_paths)}，val shard {len(val_paths)}")
 
-# 估計總步數（用第一個 shard 推算），畀 cosine schedule 用
-steps_per_shard = sum(1 for _ in batches(train_paths[:1], unit_to_id, args.max_frames, shuffle=False))
-total_steps = max(steps_per_shard * len(train_paths) * args.epochs, args.warmup + 1)
+# 數晒所有 shard 嘅 batch 數，畀 cosine schedule 用（只用第一個 shard 推算會估少，lr 太早跌到 0）
+steps_per_epoch = sum(1 for _ in batches(train_paths, unit_to_id, args.max_frames, shuffle=False))
+total_steps = max(steps_per_epoch * args.epochs, args.warmup + 1)
+print(f"每個 epoch {steps_per_epoch} 步，總共 {total_steps} 步")
 opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
 sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / args.warmup) * 0.5 * (
     1 + math.cos(math.pi * min(1.0, s / total_steps))))
