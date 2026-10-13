@@ -42,6 +42,40 @@ Train 時間：約 1 小時 30 分（每步約 0.24 秒前半，後半同時做�
 
 速度（短句逐句轉錄，連 LM）：大約 110–200× 即時；未量長音頻批次。
 
+### frozen vs learned（同樣數據、同樣設定，只換分類頭）
+
+| | frozen（EmbeddingGemma 文字空間，固定） | learned（普通 CTC 分類頭） |
+|---|---|---|
+| 最好驗證 CER | 14.96% | **14.24%** |
+| test greedy | 15.77% | **14.90%** |
+| test + LM（各自喺 dev 揀 α／β） | 12.99%（α=0.7 β=5.0） | **12.59%**（α=0.7 β=4.0） |
+| 去到 15% 要幾多步 | 9500 | 5500 |
+| 每步時間 | 約 0.24s | 約 0.4s（要更新 9689×768 字典） |
+| **LibriSpeech test-clean 200 句（英文，冇 train 過）WER** | **54.8%** | 57.9% |
+| samples en-1 ／ cmn-3 | **27% ／ 53%** | 55% ／ 73% |
+
+**結論**：喺同類數據（粵語），**固定用 EmbeddingGemma 文字空間冇幫助**，普通分類頭仲準少少、學得快好多。
+frozen 唯一嘅優勢係對冇 train 過嘅語言泛化好少少（英文 WER 54.8% vs 57.9%），差距唔大。
+
+### 開放字典（只有 frozen 做得到）
+
+frozen 嘅字典係 text embedding，可以推理時加新字唔使重新 train（`scripts/open_vocab.py`）。
+加 6615 個常用英文詞（google-10000-english）：
+
+| | 字典 | 參考字唔喺字典 | LibriSpeech WER |
+|---|---|---|---|
+| frozen | 9689 | 30.9% | **54.8%** |
+| frozen + 英文詞 | 16304 | 11.1% | 55.8% |
+
+**唔得**：新字會被揀（「feels」啱，「whilst」「whats」「containing」錯），但整體冇改善。
+reader 只係學識對準 train 過嘅字附近，冇學到通用「聲音 → 文字空間」對應；要開放字典就要好似 eg2 咁，用大字典嘅語言直接 train。
+粵語唔受影響（加英文詞之後 yue samples 一字不差）。
+
+### 速度（RTX 5070 Ti，greedy，唔計讀檔）
+
+10 分鐘音頻切 30 秒一段：batch 1 → 1.12s（535×）；**batch 8 → 0.58s（約 1000×，一個鐘約 3.5 秒）**；batch 20 → 0.64s。
+（eg2：MacBook Air Neural Engine 一個鐘 13 秒 —— 硬件唔同，唔可以直接比。）
+
 ## 第一輪（Colab L4）
 
 98 小時（wordshk 限 60h）、冇遮罩、lr schedule 有 bug（第 6000 步 lr 已經跌到 0）：驗證 CER **18.26%**（greedy）。

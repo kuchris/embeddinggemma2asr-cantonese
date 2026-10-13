@@ -25,10 +25,10 @@ DATASETS = {
 }
 
 
-def iter_rows(repo: str, split: str, columns: list[str]):
+def iter_rows(repo: str, split: str, columns: list[str], config: str = "default"):
     """直接讀 Hugging Face 自動轉好嘅 parquet（refs/convert/parquet），唔經 datasets 嘅音頻解碼（佢要 torchcodec）。"""
     fs = HfFileSystem()
-    files = sorted(fs.glob(f"datasets/{repo}@~parquet/default/{split}/*.parquet"))
+    files = sorted(fs.glob(f"datasets/{repo}@~parquet/{config}/{split}/*.parquet"))
     if not files:
         raise SystemExit(f"{repo} 冇 parquet 版本")
     for path in files:
