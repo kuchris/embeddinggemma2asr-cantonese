@@ -1,0 +1,9 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 模型檔、encoder feature、checkpoint（體積大，只放本機／Drive）
+models/
+data/
+runs/

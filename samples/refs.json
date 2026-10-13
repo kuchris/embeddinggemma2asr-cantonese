@@ -1,0 +1,50 @@
+{
+ "yue-1": {
+  "text": "喂，你好啊，我想问下，你今晚得唔得闲一齐食饭。",
+  "sec": 5.8
+ },
+ "yue-2": {
+  "text": "唔好意思，我头先冇听清楚，你可唔可以讲多一次。",
+  "sec": 6.3
+ },
+ "yue-3": {
+  "text": "今日好热啊，我哋不如去商场行下啦。",
+  "sec": 4.6
+ },
+ "cmn-1": {
+  "text": "你好，请问你明天下午有空吗？我们可以一起开会。",
+  "sec": 6.1
+ },
+ "cmn-2": {
+  "text": "不好意思，刚才网络有点卡，你能再说一遍吗？",
+  "sec": 5.3
+ },
+ "cmn-3": {
+  "text": "这家餐厅的菜很好吃，下次我带你去。",
+  "sec": 4.5
+ },
+ "en-1": {
+  "text": "Hey, are you free this weekend, we could grab some coffee.",
+  "sec": 5.1
+ },
+ "en-2": {
+  "text": "Sorry, the connection dropped for a second. Could you say that again?",
+  "sec": 5.5
+ },
+ "en-3": {
+  "text": "I just moved to Tokyo last month, so everything still feels new.",
+  "sec": 5.0
+ },
+ "ja-1": {
+  "text": "もしもし、今週の土曜日は空いていますか？",
+  "sec": 3.8
+ },
+ "ja-2": {
+  "text": "すみません、もう一度ゆっくり言っていただけますか？",
+  "sec": 4.1
+ },
+ "ja-3": {
+  "text": "駅の近くに新しいラーメン屋ができたそうですよ。",
+  "sec": 4.0
+ }
+}

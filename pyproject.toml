@@ -1,0 +1,30 @@
+[project]
+name = "gemma2asr"
+version = "0.1.0"
+description = "用凍結嘅 EmbeddingGemma 2 audio encoder 加一個細 reader 做 ASR（粵語／中文／英文）"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "numpy>=2.0",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "torch>=2.8",
+    "transformers>=5.19.0",
+    "accelerate>=1.0",
+    "opencc-python-reimplemented>=0.1.7",
+    "tqdm",
+    "pillow>=12.3.0",
+    "torchvision>=0.26.0",
+    "pyarrow>=26.0.0",
+    "huggingface-hub>=2.2.0",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
