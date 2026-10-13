@@ -3,7 +3,7 @@
 每個 feature 資料夾最後一個 shard 留嚟做驗證（CER）。
 
 用法：python scripts/train.py data/feats/wordshk data/feats/mixed --vocab data/vocab.pt --out runs/frozen
-      [--head frozen|tuned|learned] [--epochs 10] [--max-frames 40000]
+      [--head frozen|tuned|learned] [--epochs 30] [--max-frames 40000]
 """
 
 import sys
@@ -30,11 +30,11 @@ parser.add_argument("--out", required=True)
 parser.add_argument("--head", default="frozen", choices=["frozen", "tuned", "learned"])
 parser.add_argument("--d-model", type=int, default=384)
 parser.add_argument("--layers", type=int, default=6)
-parser.add_argument("--epochs", type=int, default=10)
+parser.add_argument("--epochs", type=int, default=30)
 parser.add_argument("--max-frames", type=int, default=40000, help="每個 batch 最多幾多格（連 padding）")
 parser.add_argument("--lr", type=float, default=1e-3)
-parser.add_argument("--warmup", type=int, default=1000)
-parser.add_argument("--eval-every", type=int, default=2000)
+parser.add_argument("--warmup", type=int, default=500)
+parser.add_argument("--eval-every", type=int, default=500)
 parser.add_argument("--resume", action="store_true")
 args = parser.parse_args()
 
