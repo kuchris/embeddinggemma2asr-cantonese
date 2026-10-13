@@ -31,6 +31,7 @@ parser.add_argument("--out", required=True)
 parser.add_argument("--head", default="frozen", choices=["frozen", "tuned", "learned"])
 parser.add_argument("--d-model", type=int, default=384)
 parser.add_argument("--layers", type=int, default=6)
+parser.add_argument("--heads", type=int, default=6, help="attention head 數，要整除 d-model")
 parser.add_argument("--dropout", type=float, default=0.1)
 parser.add_argument("--time-masks", type=int, default=2, help="每 5 秒遮幾段時間（SpecAugment 式，0 = 唔遮）")
 parser.add_argument("--time-mask-width", type=int, default=6, help="每段最多遮幾格（每格 40ms）")
@@ -61,7 +62,8 @@ for d in args.feat_dirs:
     train_paths += paths[:-1]
     val_paths.append(paths[-1])
 
-model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, dropout=args.dropout, head=args.head).to(device)
+model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, heads=args.heads, dropout=args.dropout,
+               head=args.head).to(device)
 print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
       f"字典 {len(vocab['units'])}，head={args.head}，train shard {len(train_paths)}，val shard {len(val_paths)}")
 
