@@ -7,3 +7,6 @@ __pycache__/
 models/
 data/
 runs/
+
+# 你自己嘅錄音（私人，唔上 GitHub）
+real/
