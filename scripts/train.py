@@ -30,6 +30,11 @@ parser.add_argument("--out", required=True)
 parser.add_argument("--head", default="frozen", choices=["frozen", "tuned", "learned"])
 parser.add_argument("--d-model", type=int, default=384)
 parser.add_argument("--layers", type=int, default=6)
+parser.add_argument("--dropout", type=float, default=0.1)
+parser.add_argument("--time-masks", type=int, default=2, help="每 5 秒遮幾段時間（SpecAugment 式，0 = 唔遮）")
+parser.add_argument("--time-mask-width", type=int, default=6, help="每段最多遮幾格（每格 40ms）")
+parser.add_argument("--feat-masks", type=int, default=2, help="每句遮幾段 feature 維度")
+parser.add_argument("--feat-mask-width", type=int, default=48, help="每段最多遮幾多維（共 512 維）")
 parser.add_argument("--epochs", type=int, default=30)
 parser.add_argument("--max-frames", type=int, default=40000, help="每個 batch 最多幾多格（連 padding）")
 parser.add_argument("--lr", type=float, default=1e-3)
@@ -55,7 +60,7 @@ for d in args.feat_dirs:
     train_paths += paths[:-1]
     val_paths.append(paths[-1])
 
-model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, head=args.head).to(device)
+model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, dropout=args.dropout, head=args.head).to(device)
 print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
       f"字典 {len(vocab['units'])}，head={args.head}，train shard {len(train_paths)}，val shard {len(val_paths)}")
 
@@ -77,6 +82,23 @@ if args.resume and ckpt_path.exists():
     sched.load_state_dict(ck["sched"])
     step, epoch, best_cer = ck["step"], ck["epoch"], ck["best_cer"]
     print(f"由 step {step}（epoch {epoch}）續 train")
+
+
+def augment(feats: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+    """喺 feature 上面隨機遮時間段同維度段（SpecAugment 式），對付 overfitting。encoder 凍結都用得。"""
+    feats = feats.clone()
+    for i, n in enumerate(lengths.tolist()):
+        for _ in range(max(1, round(args.time_masks * n / 125))):  # 125 格 = 5 秒
+            w = int(torch.randint(0, args.time_mask_width + 1, ()))
+            if w and n > w:
+                t0 = int(torch.randint(0, n - w, ()))
+                feats[i, t0:t0 + w] = 0
+        for _ in range(args.feat_masks):
+            w = int(torch.randint(0, args.feat_mask_width + 1, ()))
+            if w:
+                f0 = int(torch.randint(0, feats.shape[-1] - w, ()))
+                feats[i, :, f0:f0 + w] = 0
+    return feats
 
 
 def save(path: Path):
@@ -114,6 +136,8 @@ t0, loss_sum, loss_n = time.time(), 0.0, 0
 while epoch < args.epochs:
     for feats, lengths, targets, target_lengths, _ in batches(train_paths, unit_to_id, args.max_frames, True):
         feats, lengths = feats.to(device), lengths.to(device)
+        if args.time_masks or args.feat_masks:
+            feats = augment(feats, lengths)
         with torch.autocast("cuda", dtype=amp_dtype):
             log_probs = model(feats, lengths)
         loss = F.ctc_loss(log_probs.float().transpose(0, 1), targets.to(device), lengths, target_lengths.to(device),
