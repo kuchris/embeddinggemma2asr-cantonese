@@ -27,9 +27,11 @@ parser.add_argument("ckpt")
 parser.add_argument("feat_dirs", nargs="+")
 parser.add_argument("--lm")
 parser.add_argument("--max-utts", type=int, default=1500)
-parser.add_argument("--alphas", type=float, nargs="+", default=[0.3, 0.5, 0.8])
-parser.add_argument("--betas", type=float, nargs="+", default=[0.5, 1.5])
+parser.add_argument("--alphas", type=float, nargs="+", default=[0.4, 0.6, 0.8])
+parser.add_argument("--betas", type=float, nargs="+", default=[2.0, 4.0, 6.0])
 parser.add_argument("--beam", type=int, default=8)
+parser.add_argument("--part", default="dev", choices=["dev", "test", "all"],
+                    help="驗證 shard 打亂之後：前一半 dev（揀 α／β），後一半 test（報告結果，唔好用嚟調參）")
 args = parser.parse_args()
 
 ck = torch.load(args.ckpt, weights_only=False)
@@ -46,7 +48,10 @@ for d in args.feat_dirs:
     shard = torch.load(shard_paths([d])[-1])
     pairs = [(f, [unit_to_id[u] for u in us if u in unit_to_id]) for f, us in zip(shard["feats"], shard["units"])]
     pairs = [p for p in pairs if p[1]]
-    items += random.sample(pairs, min(per_set, len(pairs)))
+    random.shuffle(pairs)
+    half = len(pairs) // 2
+    pairs = {"dev": pairs[:half], "test": pairs[half:], "all": pairs}[args.part]
+    items += pairs[:per_set]
 
 log_probs = []
 with torch.no_grad():
@@ -62,7 +67,7 @@ def cer(hyps):
 
 
 greedy = [Reader.greedy(torch.from_numpy(lp)[None], torch.tensor([len(lp)]))[0] for lp in log_probs]
-print(f"{len(items)} 句，{total} 個字")
+print(f"[{args.part}] {len(items)} 句，{total} 個字")
 print(f"greedy                CER {cer(greedy):.2%}")
 
 t0 = time.time()

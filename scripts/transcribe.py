@@ -1,6 +1,6 @@
 """用 train 好嘅 reader 轉錄音頻檔。
 
-用法：python scripts/transcribe.py runs/frozen/best.pt samples/*.wav [--lm data/lm.pkl --alpha 0.5 --beta 1.0]
+用法：python scripts/transcribe.py runs/frozen/best.pt samples/*.wav [--lm data/lm.pkl --alpha 0.7 --beta 5.0]
 """
 
 import sys
@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("ckpt")
 parser.add_argument("audio", nargs="+")
 parser.add_argument("--lm", help="n-gram LM（build_lm.py 整）；唔畀就用 greedy")
-parser.add_argument("--alpha", type=float, default=0.5)
-parser.add_argument("--beta", type=float, default=1.0)
+parser.add_argument("--alpha", type=float, default=0.7)
+parser.add_argument("--beta", type=float, default=5.0)
 args = parser.parse_args()
 
 ck = torch.load(args.ckpt, weights_only=False)
