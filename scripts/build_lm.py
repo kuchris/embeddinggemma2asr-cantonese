@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.stdout.reconfigure(line_buffering=True)  # 寫去檔案都即時睇到 log
 
 import argparse
 
