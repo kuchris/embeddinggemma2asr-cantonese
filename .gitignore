@@ -10,3 +10,6 @@ runs/
 
 # 你自己嘅錄音（私人，唔上 GitHub）
 real/
+
+# 外部工具（llama.cpp 等）
+tools/

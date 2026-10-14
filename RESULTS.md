@@ -263,3 +263,21 @@ Google Drive `MyDrive/gemma2asr/round4/`（連完整 checkpoint）、`MyDrive/ge
 
 Qwen3.5-2B（冇 fine-tune，同一批 300 句）：daily+mixed 14.6% → **15.6%**、MDCC 7.6% → **8.4%**、SpiCE 38.1% → **40.3%**，
 每句約 55–96ms。比 0.8B 好少少（識改「青台→青苔」、「hong kong→香港」），但仍然全部變差（翻譯英文、刪字）。
+
+## Gemma 4 E2B 直接轉錄（unsloth GGUF Q4_K_M + mmproj-F16，llama.cpp b11609 CUDA）
+
+`scripts/eval_gemma4.py`：經 `llama-server`（`-np 4`）送錄音，關咗思考模式（`enable_thinking: false`），
+提示要求用粵語口語字、英文保留英文。同 `llm_correct.py` 同一批 300 句。
+（`llama-mtmd-cli` 喺 Windows 一入 audio 就 crash（0xC0000409），`llama-server` 冇事。）
+
+| 測試集 | **Gemma 4 E2B** | learned_r4（同一批句子） |
+|---|---|---|
+| daily + mixed | **44.2%** | 14.6% |
+| MDCC test | **52.6%** | 7.6% |
+| SpiCE 對話 | **71.4%** | 38.1% |
+| 速度 | 5–14× 即時（並行 4，每句約 0.3–0.4 秒） | 約 1000× |
+
+- 廣東話好差而且慢：「蔡嘉儀香港電台製作」→「財加一香港電台再介紹」，有時仲會亂作句子；粵英夾雜嘅英文部分反而寫得幾好。
+- 可能原因：Gemma 4 冇講明支援粵語；Q4 量化；llama.cpp audio 仲係實驗階段。完整精度版未測。
+- Gemma 4 嘅 audio encoder 同 EmbeddingGemma 2 係同一類（`gemma4_audio`）——我哋 720 小時粵語數據 train 嘅細 reader 遠好過佢，
+  即係**粵語數據先係關鍵**，唔係 decoder 大細。
