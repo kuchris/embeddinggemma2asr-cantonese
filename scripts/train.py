@@ -21,6 +21,7 @@ import torch
 import torch.nn.functional as F
 
 from g2asr.data import batches, shard_paths
+from g2asr.fastdata import Preloaded, augment_gpu, prefetch
 from g2asr.reader import Reader
 from g2asr.text import edit_distance, join_units
 
@@ -43,6 +44,9 @@ parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--warmup", type=int, default=500)
 parser.add_argument("--eval-every", type=int, default=500)
 parser.add_argument("--resume", action="store_true")
+parser.add_argument("--stream", action="store_true",
+                    help="唔預先載入 RAM，逐個 shard 由硬碟讀（RAM 唔夠先用；慢好多）")
+parser.add_argument("--max-steps", type=int, default=0, help="行咗幾多步就停（測試用，0 = 唔限）")
 args = parser.parse_args()
 
 torch.manual_seed(0)
@@ -67,8 +71,14 @@ model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, heads=arg
 print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
       f"字典 {len(vocab['units'])}，head={args.head}，train shard {len(train_paths)}，val shard {len(val_paths)}")
 
-# 數晒所有 shard 嘅 batch 數，畀 cosine schedule 用（只用第一個 shard 推算會估少，lr 太早跌到 0）
-steps_per_epoch = sum(1 for _ in batches(train_paths, unit_to_id, args.max_frames, shuffle=False))
+if args.stream:
+    # 數晒所有 shard 嘅 batch 數，畀 cosine schedule 用（只用第一個 shard 推算會估少，lr 太早跌到 0）
+    steps_per_epoch = sum(1 for _ in batches(train_paths, unit_to_id, args.max_frames, shuffle=False))
+else:
+    t_load = time.time()
+    data = Preloaded(train_paths, unit_to_id)
+    steps_per_epoch = len(data.batches(args.max_frames, shuffle=False))
+    print(f"預先載入 {len(data.items)} 句、{data.frames / 25 / 3600:.0f} 小時，用咗 {time.time() - t_load:.0f}s")
 total_steps = max(steps_per_epoch * args.epochs, args.warmup + 1)
 print(f"每個 epoch {steps_per_epoch} 步，總共 {total_steps} 步")
 opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -85,23 +95,6 @@ if args.resume and ckpt_path.exists():
     sched.load_state_dict(ck["sched"])
     step, epoch, best_cer = ck["step"], ck["epoch"], ck["best_cer"]
     print(f"由 step {step}（epoch {epoch}）續 train")
-
-
-def augment(feats: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
-    """喺 feature 上面隨機遮時間段同維度段（SpecAugment 式），對付 overfitting。encoder 凍結都用得。"""
-    feats = feats.clone()
-    for i, n in enumerate(lengths.tolist()):
-        for _ in range(max(1, round(args.time_masks * n / 125))):  # 125 格 = 5 秒
-            w = int(torch.randint(0, args.time_mask_width + 1, ()))
-            if w and n > w:
-                t0 = int(torch.randint(0, n - w, ()))
-                feats[i, t0:t0 + w] = 0
-        for _ in range(args.feat_masks):
-            w = int(torch.randint(0, args.feat_mask_width + 1, ()))
-            if w:
-                f0 = int(torch.randint(0, feats.shape[-1] - w, ()))
-                feats[i, :, f0:f0 + w] = 0
-    return feats
 
 
 def save(path: Path):
@@ -137,10 +130,15 @@ log = open(out / "log.jsonl", "a", encoding="utf-8")
 model.train()
 t0, loss_sum, loss_n = time.time(), 0.0, 0
 while epoch < args.epochs:
-    for feats, lengths, targets, target_lengths, _ in batches(train_paths, unit_to_id, args.max_frames, True):
-        feats, lengths = feats.to(device), lengths.to(device)
+    if args.stream:
+        source = ((f, l, t, tl) for f, l, t, tl, _ in batches(train_paths, unit_to_id, args.max_frames, True))
+    else:
+        source = prefetch(data, data.batches(args.max_frames, shuffle=True, seed=epoch))
+    for feats, lengths, targets, target_lengths in source:
+        feats, lengths = feats.to(device, non_blocking=True), lengths.to(device)
         if args.time_masks or args.feat_masks:
-            feats = augment(feats, lengths)
+            feats = augment_gpu(feats, lengths, args.time_masks, args.time_mask_width,
+                                args.feat_masks, args.feat_mask_width)
         with torch.autocast("cuda", dtype=amp_dtype):
             log_probs = model(feats, lengths)
         loss = F.ctc_loss(log_probs.float().transpose(0, 1), targets.to(device), lengths, target_lengths.to(device),
@@ -168,7 +166,11 @@ while epoch < args.epochs:
                 best_cer = cer
                 save(out / "best.pt")
             save(ckpt_path)
+        if args.max_steps and step >= args.max_steps:
+            break
     epoch += 1
+    if args.max_steps and step >= args.max_steps:
+        break
 
 cer = evaluate()
 print(f"完成：最後 CER {cer:.2%}，最好 {min(best_cer, cer):.2%}")
