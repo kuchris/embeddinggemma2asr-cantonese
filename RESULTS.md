@@ -245,3 +245,18 @@ learned reader（20.6M 連字典），12 epoch、14076 步、每批 6 萬格（1
 
 **檔案**：本機 `runs/learned_r4/best_infer.pt`（推理用，121MB）、`data/lm_r4.pkl`、`runs/round4/`（log）；
 Google Drive `MyDrive/gemma2asr/round4/`（連完整 checkpoint）、`MyDrive/gemma2asr/feats_r4/`（全部 feature，63GB）。
+
+## LLM 修正（Qwen3.5-0.8B，冇 fine-tune）
+
+`scripts/llm_correct.py`：learned_r4 greedy 輸出交畀 Qwen3.5-0.8B（bf16，本機 RTX 5070 Ti，batch 16），
+提示叫佢只改明顯錯字、保留口語、唔好加減內容。每個測試集隨機 300 句。
+
+| 測試集 | ASR | + LLM 修正 | 改咗 | 每句 |
+|---|---|---|---|---|
+| daily + mixed | 14.6% | **17.9%** ❌ | 95 句 | 85ms |
+| MDCC test | 7.6% | **9.3%** ❌ | 35 句 | 54ms |
+| SpiCE 對話 | 38.1% | **41.5%** ❌ | 74 句 | 95ms |
+
+全部變差：刪字（「有一套石氣」→「一套石氣」）、改書面語（呢個→這個、佢→他）、將英文翻譯做中文（direction→方向）、
+重寫句子；真正嘅同音錯字（石氣→石器、fall研→科研）反而改唔到。
+**唔 fine-tune 嘅細 LLM 冇用**；要用「ASR 輸出 → 正確答案」配對 fine-tune 先有機會。
