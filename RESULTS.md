@@ -80,7 +80,7 @@ frozen 唯一嘅優勢係對冇 train 過嘅語言泛化好少少（英文 WER 5
 - 整體 **SenseVoice 贏**（9.9% vs 13.0%）。
 - 我哋只係喺 wordshk 贏 —— 但我哋 train 過同類數據（同風格、可能同一個 TTS 聲），唔公平。
 - 最似真實對話嘅 daily／mixed，SenseVoice 明顯好啲。
-- 速度：SenseVoice CPU 約 85× 即時；我哋 GPU 約 1000×（硬件唔同）。
+- 速度：SenseVoice CPU 約 85× 即時；我哋 GPU 約 1000×（⚠️ 硬件唔同，唔可以比）。
 - **結論**：Gaijincall 繼續用 SenseVoice。呢個方法要追上，大概要解凍部分 encoder 或者用多好多真人數據。
 
 ### 開放字典（只有 frozen 做得到）
@@ -101,6 +101,9 @@ reader 只係學識對準 train 過嘅字附近，冇學到通用「聲音 → �
 
 10 分鐘音頻切 30 秒一段：batch 1 → 1.12s（535×）；**batch 8 → 0.58s（約 1000×，一個鐘約 3.5 秒）**；batch 20 → 0.64s。
 （eg2：MacBook Air Neural Engine 一個鐘 13 秒 —— 硬件唔同，唔可以直接比。）
+
+> ⚠️ 以上所有 SenseVoice 數字都係借用 Gaijincall 嘅 sherpa-onnx int8 CPU 模型同環境量出嚟；準確度可以參考，速度唔可以同我哋（GPU）比較。
+> 之後應該喺 gemma2asr 入面獨立準備 GPU 版 SenseVoice 再比。
 
 ## 第一輪（Colab L4）
 
@@ -189,5 +192,6 @@ MDCC（`ming030890/mdcc`）：香港粵語有聲書真人錄音，逐字口語�
 | SenseVoice（CPU 8 線程） | 1.2s | 11.6s | 12.8s |
 
 - VAD 對兩邊都大幫助（擋走訪問者漏音同靜音），我哋受益最大（84% → 46%）。
-- 速度：我哋快約 4 倍；準確度：自然對話仍然輸 SenseVoice（46% vs 29%）—— 要靠對話類 train 數據追。
+- ⚠️ 速度比較唔公平：SenseVoice 用嘅係 Gaijincall 嗰個 int8 **CPU** 版，我哋用 GPU。GPU 版 SenseVoice 未測，「快幾倍」唔成立。
+- 準確度：自然對話仍然輸 SenseVoice（46% vs 29%）—— 要靠對話類 train 數據追。
 - `transcribe.py` 長過 20 秒嘅音頻預設用 VAD（`--no-vad` 關閉）。
