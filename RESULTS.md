@@ -60,6 +60,25 @@ LibriSpeech WER **59.1%**（三個入面最差）—— 介乎兩者之間，而
 **結論**：喺同類數據（粵語），**固定用 EmbeddingGemma 文字空間冇幫助**，普通分類頭仲準少少、學得快好多。
 frozen 唯一嘅優勢係對冇 train 過嘅語言泛化好少少（英文 WER 54.8% vs 57.9%），差距唔大。
 
+### 同 SenseVoice 比較（同一批 test 句子，由原始音頻轉錄）
+
+`scripts/export_testset.py` 將 `evaluate.py --part test` 嗰 1030 句（102 分鐘）嘅原始音頻對返出嚟（`data/testset/`），
+再用 Gaijincall 嘅 SenseVoice（sherpa-onnx int8，CPU 8 線程，`use_itn=False`）轉錄。字典外嘅字都計錯。
+
+| | **合計** | daily | mixed（粵英夾雜） | wordshk |
+|---|---|---|---|---|
+| learned greedy | 15.1% | 9.5% | 19.0% | 6.4% |
+| learned + LM（α=0.7 β=4.5） | 13.0% | 9.5% | 16.4% | **5.4%** |
+| frozen greedy ／ + LM | 15.9% ／ 13.2% | | | |
+| SenseVoice 2024-07-17 | **9.9%** | 5.4% | **11.1%** | 7.2% |
+| SenseVoice 2025-09-09-yue | 10.3% | **4.1%** | 12.1% | 6.7% |
+
+- 整體 **SenseVoice 贏**（9.9% vs 13.0%）。
+- 我哋只係喺 wordshk 贏 —— 但我哋 train 過同類數據（同風格、可能同一個 TTS 聲），唔公平。
+- 最似真實對話嘅 daily／mixed，SenseVoice 明顯好啲。
+- 速度：SenseVoice CPU 約 85× 即時；我哋 GPU 約 1000×（硬件唔同）。
+- **結論**：Gaijincall 繼續用 SenseVoice。呢個方法要追上，大概要解凍部分 encoder 或者用多好多真人數據。
+
 ### 開放字典（只有 frozen 做得到）
 
 frozen 嘅字典係 text embedding，可以推理時加新字唔使重新 train（`scripts/open_vocab.py`）。
