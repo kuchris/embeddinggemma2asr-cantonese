@@ -260,3 +260,6 @@ Google Drive `MyDrive/gemma2asr/round4/`（連完整 checkpoint）、`MyDrive/ge
 全部變差：刪字（「有一套石氣」→「一套石氣」）、改書面語（呢個→這個、佢→他）、將英文翻譯做中文（direction→方向）、
 重寫句子；真正嘅同音錯字（石氣→石器、fall研→科研）反而改唔到。
 **唔 fine-tune 嘅細 LLM 冇用**；要用「ASR 輸出 → 正確答案」配對 fine-tune 先有機會。
+
+Qwen3.5-2B（冇 fine-tune，同一批 300 句）：daily+mixed 14.6% → **15.6%**、MDCC 7.6% → **8.4%**、SpiCE 38.1% → **40.3%**，
+每句約 55–96ms。比 0.8B 好少少（識改「青台→青苔」、「hong kong→香港」），但仍然全部變差（翻譯英文、刪字）。
