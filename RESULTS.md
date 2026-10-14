@@ -281,3 +281,8 @@ Qwen3.5-2B（冇 fine-tune，同一批 300 句）：daily+mixed 14.6% → **15.6
 - 可能原因：Gemma 4 冇講明支援粵語；Q4 量化；llama.cpp audio 仲係實驗階段。完整精度版未測。
 - Gemma 4 嘅 audio encoder 同 EmbeddingGemma 2 係同一類（`gemma4_audio`）——我哋 720 小時粵語數據 train 嘅細 reader 遠好過佢，
   即係**粵語數據先係關鍵**，唔係 decoder 大細。
+
+Gemma 4 **E4B QAT**（`unsloth/gemma-4-E4B-it-qat-GGUF` UD-Q4_K_XL + mmproj-F16，同一批 300 句，並行 8）：
+daily+mixed **42.5%**、MDCC **49.8%**、SpiCE **84.4%**；9–23× 即時。
+比 E2B 只好 2–3 點，SpiCE 仲差咗（更易作句子）—— 問題唔係量化或者 model 大細，係 Gemma 4 本身唔識粵語。
+並行：4 → 8 句快約一倍（每秒 1.1 → 2.3 句），8 → 12 句只快約 8%。
