@@ -36,6 +36,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--out", required=True)
 parser.add_argument("--max-hours", type=float, default=500)
 parser.add_argument("--stride", type=int, default=12, help="每隔幾多個 parquet 檔揀一個（覆蓋多啲唔同節目）")
+parser.add_argument("--offset", type=int, default=0, help="由第幾個檔開始（幾條流程並行時，各自用唔同 offset）")
 parser.add_argument("--agree", type=float, default=0.15, help="兩個老師之間 CER 上限")
 parser.add_argument("--min-snr", type=float, default=15)
 parser.add_argument("--max-sec", type=float, default=30)
@@ -69,7 +70,7 @@ progress = out / "progress.json"
 state = json.loads(progress.read_text()) if progress.exists() else {"shards": 0, "files": [], "hours": 0.0, "seen": 0, "kept": 0}
 
 fs = HfFileSystem()
-files = sorted(fs.glob(f"datasets/{REPO}/data/*.parquet"))[::args.stride]
+files = sorted(fs.glob(f"datasets/{REPO}/data/*.parquet"))[args.offset::args.stride]
 todo = [f for f in files if Path(f).name not in state["files"]]
 print(f"揀咗 {len(files)} 個 parquet 檔，未做 {len(todo)} 個；已有 {state['hours']:.1f} 小時")
 
