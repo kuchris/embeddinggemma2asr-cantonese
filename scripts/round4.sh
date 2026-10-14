@@ -5,8 +5,7 @@
 set -u
 cd "$(dirname "$0")/.."
 export PYTHONIOENCODING=utf-8
-FEATS="data/feats/daily data/feats/mixed data/feats/wordshk data/feats/mdcc $(ls -d data/feats/radio* | tr '
-' ' ')"
+FEATS="data/feats/daily data/feats/mixed data/feats/wordshk data/feats/mdcc $(ls -d data/feats/radio_* | xargs)"
 OLD="data/feats/daily data/feats/mixed data/feats/wordshk"
 LOG=runs/round4
 mkdir -p "$LOG"
