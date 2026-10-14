@@ -195,3 +195,22 @@ MDCC（`ming030890/mdcc`）：香港粵語有聲書真人錄音，逐字口語�
 - ⚠️ 速度比較唔公平：SenseVoice 用嘅係 Gaijincall 嗰個 int8 **CPU** 版，我哋用 GPU。GPU 版 SenseVoice 未測，「快幾倍」唔成立。
 - 準確度：自然對話仍然輸 SenseVoice（46% vs 29%）—— 要靠對話類 train 數據追。
 - `transcribe.py` 長過 20 秒嘅音頻預設用 VAD（`--no-vad` 關閉）。
+
+## 公平比較：SenseVoice 都用 GPU（gemma2asr 獨立環境）
+
+`scripts/baseline_sensevoice.py`：FunASR + `FunAudioLLM/SenseVoiceSmall`（fp32，GPU），`uv sync --extra baseline`。
+唔再借用 Gaijincall。速度唔計讀檔，GPU 預熱過，同一批檔案；兩邊都試過按長度排序同唔同 batch，取最好。
+
+我哋推理改咗做 `g2asr/infer.py`：按長度排序 + encoder／reader 成批行 + bf16（準確度唔變：MDCC 7.06% ／ +LM 5.63%）。
+
+| 測試集 | 我哋 learned_r3 CER（greedy ／ +LM） | SenseVoice GPU CER | 我哋速度（greedy） | SenseVoice 速度 |
+|---|---|---|---|---|
+| 原本 test 1030 句（102 分鐘） | 14.2% ／ 12.3% | **9.7%** | **約 1000×** | 約 280–320× |
+| MDCC test 2000 句（108 分鐘） | 7.1% ／ **5.6%** | 7.9% | **約 1000×** | 約 280× |
+| MDCC test 剔走重複句 | 7.5% ／ **6.0%** | 7.8% | | |
+| SpiCE 逐句 | 49.2% ／ 47.2% | **32.6%** | | |
+| SpiCE VAD 段（31 分鐘） | 47.8% ／ 45.7% | **28.0%** | **約 900×** | 約 300–365× |
+
+- **兩邊都用 GPU：我哋 greedy 快大約 3 倍。** 加 LM（純 Python beam search）就慢返落 300× 左右，同 SenseVoice 差唔多。
+- 準確度：MDCC 贏；其他（尤其自然對話）輸。
+- Windows 上 batch 太大會頂爆 VRAM 變慢好多（我哋 bs 16 最好）；量度有波動，以上取最好嗰次。

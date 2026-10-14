@@ -17,7 +17,6 @@ sys.stdout.reconfigure(line_buffering=True)
 
 import argparse
 import json
-import re
 import time
 
 import librosa
@@ -30,7 +29,8 @@ from g2asr.decode import beam_search
 from g2asr.encoder import SAMPLE_RATE, Encoder
 from g2asr.lm import NGramLM
 from g2asr.reader import Reader
-from g2asr.text import join_units, units
+from g2asr.spice import clean, norm, tier
+from g2asr.text import join_units
 from g2asr.vad import speech_segments
 
 SPICE = Path(__file__).resolve().parent.parent / "data" / "spice"
@@ -42,27 +42,6 @@ parser.add_argument("--lm")
 parser.add_argument("--prepare", action="store_true")
 parser.add_argument("--vad-threshold", type=float, default=0.5)
 args = parser.parse_args()
-
-
-FILLERS = {"um", "uh", "mm", "hmm", "er", "ah", "eh", "oh"}
-
-
-VARIANTS = {"系": "係", "姐": "即"}  # 「系／係」「姐係／即係」只係寫法唔同，唔當錯
-
-
-def norm(us: list[str]) -> list[str]:
-    return [VARIANTS.get(u, u) for u in us if u not in FILLERS]
-
-
-def clean(text: str) -> list[str]:
-    """SpiCE 字幕 → 單位：刪走轉錄標記（&xx、xx@m、【】）同英文語氣詞（um、uh…），兩邊系統用同一套。"""
-    return norm(units(re.sub(r"&\S+|@\S+", " ", text)))
-
-
-def tier(textgrid: str, name: str):
-    block = [b for b in re.split(r"item \[\d+\]:", textgrid)[1:] if f'name = "{name}"' in b][0]
-    return [(float(a), float(b), t.strip()) for a, b, t in
-            re.findall(r'xmin = ([\d.]+)\s+xmax = ([\d.]+)\s+text = "(.*?)"', block, re.S)]
 
 
 talkers = {}

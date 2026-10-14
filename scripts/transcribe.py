@@ -15,12 +15,10 @@ import json
 import time
 
 import librosa
-import torch
 
-from g2asr.decode import beam_search
 from g2asr.encoder import SAMPLE_RATE, Encoder
+from g2asr.infer import load_reader, transcribe_batch
 from g2asr.lm import NGramLM
-from g2asr.reader import Reader
 from g2asr.text import edit_distance, join_units, units
 from g2asr.vad import MAX_SEC, speech_segments
 
@@ -35,9 +33,7 @@ parser.add_argument("--beta", type=float, default=5.0)
 parser.add_argument("--no-vad", action="store_true", help="長音頻唔用 VAD，每 30 秒硬切")
 args = parser.parse_args()
 
-ck = torch.load(args.ckpt, weights_only=False)
-model = Reader(ck["vocab_emb"], **ck["config"]).cuda().eval()
-model.load_state_dict(ck["model"])
+model, vocab = load_reader(args.ckpt)
 enc = Encoder()
 lm = NGramLM.load(args.lm) if args.lm else None
 
@@ -55,17 +51,7 @@ for path in args.audio:
         chunks = [wav[a:b] for a, b in speech_segments(wav)]
     else:
         chunks = [wav[i:i + CHUNK_SEC * SAMPLE_RATE] for i in range(0, len(wav), CHUNK_SEC * SAMPLE_RATE)]
-    ids = []
-    feats_all = [f for i in range(0, len(chunks), 8) for f in enc.frames(chunks[i:i + 8])]
-    with torch.no_grad():
-        for feats in feats_all:
-            lengths = torch.tensor([len(feats)]).cuda()
-            log_probs = model(feats[None].cuda().float(), lengths)
-            if lm:
-                ids += beam_search(log_probs[0].float().cpu().numpy(), ck["units"], lm, args.alpha, args.beta)
-            else:
-                ids += Reader.greedy(log_probs, lengths)[0]
-    hyp = [ck["units"][i] for i in ids]
+    hyp = [u for us in transcribe_batch(enc, model, vocab, chunks, lm, args.alpha, args.beta) for u in us]
     elapsed = time.time() - t0
     line = f"{Path(path).name}  ({len(wav) / SAMPLE_RATE / elapsed:.0f}× 即時)  {join_units(hyp)}"
     ref = refs.get(Path(path).stem)
