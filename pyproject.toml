@@ -16,6 +16,7 @@ dependencies = [
     "torchvision>=0.26.0",
     "pyarrow>=26.0.0",
     "huggingface-hub>=2.2.0",
+    "rapidfuzz>=3.14.6",
 ]
 
 [tool.uv]
