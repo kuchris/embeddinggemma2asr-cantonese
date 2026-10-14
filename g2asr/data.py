@@ -22,6 +22,9 @@ DATASETS = {
     "mixed": ("AlienKevin/mixed_cantonese_and_english_speech", "train", "sentence"),
     # 日常粵語（約 4 千句）
     "daily": ("ziyou-li/cantonese_daily", "train", "sentence"),
+    # MDCC：真人粵語有聲書，逐字口語字幕（train 約 6.5 萬句、test 約 1.25 萬句）
+    "mdcc": ("ming030890/mdcc", "train", "transcript"),
+    "mdcc_test": ("ming030890/mdcc", "test", "transcript"),
 }
 
 
