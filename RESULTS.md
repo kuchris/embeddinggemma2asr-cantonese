@@ -122,3 +122,31 @@ MDCC（`ming030890/mdcc`）：香港粵語有聲書真人錄音，逐字口語�
 | SenseVoice 2025-09-09-yue | **7.7%** | |
 
 真人錄音差距更大（約一倍）。注意：唔知 SenseVoice 自己有冇用 MDCC train 過。
+
+### 加 MDCC 之後（learned，11M reader，daily + mixed + wordshk + MDCC 57.5h ≈ 200h）
+
+字典 10061；15630 步（約 83 分鐘）；最好驗證 12.48%（驗證集多咗 MDCC，同之前唔可以直接比）。
+
+**MDCC test 2000 句**（LM 用 MDCC train 字幕；test 有 11.1% 句子原句喺 train 字幕出現過，所以另計「剔走重複句」）：
+
+| | 全部 2000 句 | 剔走 222 句重複 |
+|---|---|---|
+| 未加 MDCC（learned + LM） | 15.8% | |
+| **加 MDCC greedy** | 7.1% | 7.5% |
+| **加 MDCC + LM** | **5.6%** | **6.0%** |
+| SenseVoice 2024-07-17 | 8.0% | 7.8% |
+| SenseVoice 2025-09-09-yue | 7.7% | 7.6% |
+
+**原本 1030 句 test**（由原始音頻）：
+
+| | 合計 | daily | mixed | wordshk |
+|---|---|---|---|---|
+| 未加 MDCC（learned + LM） | 13.0% | 9.5% | 16.4% | 5.4% |
+| **加 MDCC + LM** | **12.3%** | 7.3% | 15.6% | 5.0% |
+| SenseVoice 2024-07-17 | 9.9% | 5.4% | 11.1% | 7.2% |
+
+**結論**
+- 57.5 小時真人數據令 MDCC test 由 15.8% 跌到 **5.6%**（剔走重複句 6.0%），**贏 SenseVoice（7.6–7.8%）**。
+  ⚠️ 但係同分佈（MDCC 有聲書風格）—— SenseVoice 係 zero-shot，我哋 train 過同類錄音，唔係完全公平。
+- 其他數據只係小幅進步（daily 9.5% → 7.3%），整體仲輸 SenseVoice（12.3% vs 9.9%），尤其粵英夾雜。
+- 即係話：**凍結 encoder + 細 reader 只要有對口嘅真人數據，可以追到甚至超越 SenseVoice**；瓶頸主要係數據，唔係 reader。
