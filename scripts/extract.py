@@ -39,7 +39,7 @@ progress = out / "progress.json"  # 斷咗可以續做：記住已經睇過幾�
 state = json.loads(progress.read_text()) if progress.exists() else {"shards": 0, "rows": 0, "hours": 0.0}
 done, skip = state["shards"], state["rows"]
 
-ds = iter_rows(repo, split, ["audio", text_col])
+ds = iter_rows(repo, split, ["audio", text_col], skip=skip)  # 已做嘅行直接跳過，唔使重新落載
 enc = Encoder()
 shard = {"feats": [], "units": [], "text": []}
 pending, hours, n_seen, n_skipped = [], 0.0, skip, 0
@@ -77,9 +77,7 @@ def prepared(rows):
     """按原本次序 yield（行號, 結果），背後用線程池預先解碼，等 GPU 唔使等 CPU。"""
     with ThreadPoolExecutor(args.workers) as pool:
         queue = deque()
-        for i, row in enumerate(rows, 1):
-            if i <= skip:
-                continue
+        for i, row in enumerate(rows, skip + 1):
             queue.append((i, pool.submit(prepare, row)))
             if len(queue) >= args.workers * 8:
                 i0, fut = queue.popleft()

@@ -12,7 +12,7 @@ import numpy as np
 import pyarrow.parquet as pq
 import soundfile as sf
 import torch
-from huggingface_hub import HfFileSystem
+from huggingface_hub import HfFileSystem, hf_hub_download
 
 # 名 → (Hugging Face 數據集, split, 字幕欄)
 DATASETS = {
@@ -28,16 +28,42 @@ DATASETS = {
 }
 
 
-def iter_rows(repo: str, split: str, columns: list[str], config: str = "default"):
-    """直接讀 Hugging Face 自動轉好嘅 parquet（refs/convert/parquet），唔經 datasets 嘅音頻解碼（佢要 torchcodec）。"""
+RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
+
+
+def iter_rows(repo: str, split: str, columns: list[str], config: str = "default", skip: int = 0):
+    """讀 Hugging Face 自動轉好嘅 parquet（refs/convert/parquet），唔經 datasets 嘅音頻解碼（佢要 torchcodec）。
+
+    每個 parquet 檔成個落載去 data/raw/ 再喺本機讀：逐段遠端讀會發大量細請求，好易俾 Hugging Face 限流（429）。
+    skip：跳過頭幾多行；已經做完嘅檔只讀 metadata 數行數，唔使落載（續做時好重要）。
+    """
     fs = HfFileSystem()
     files = sorted(fs.glob(f"datasets/{repo}@~parquet/{config}/{split}/*.parquet"))
     if not files:
         raise SystemExit(f"{repo} 冇 parquet 版本")
     for path in files:
-        with fs.open(path) as f:
-            for batch in pq.ParquetFile(f).iter_batches(batch_size=64, columns=columns):
-                yield from batch.to_pylist()
+        name = f"{config}/{split}/{Path(path).name}"
+        local = RAW_DIR / repo / name
+        if skip:
+            if local.exists():
+                n_rows = pq.ParquetFile(local).metadata.num_rows
+            else:
+                with fs.open(path) as f:
+                    n_rows = pq.ParquetFile(f).metadata.num_rows
+            if skip >= n_rows:
+                skip -= n_rows
+                continue
+        if not local.exists():
+            hf_hub_download(repo, name, repo_type="dataset", revision="refs/convert/parquet",
+                            local_dir=RAW_DIR / repo)
+        pf = pq.ParquetFile(local)
+        for batch in pf.iter_batches(batch_size=64, columns=columns):
+            rows = batch.to_pylist()
+            if skip >= len(rows):
+                skip -= len(rows)
+                continue
+            yield from rows[skip:]
+            skip = 0
 
 
 def decode_audio(audio: dict, sr: int = 16000) -> np.ndarray:
