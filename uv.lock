@@ -478,6 +478,9 @@ baseline = [
     { name = "funasr" },
     { name = "kaldi-native-fbank" },
 ]
+train = [
+    { name = "tojyutping" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -493,12 +496,13 @@ requires-dist = [
     { name = "rapidfuzz", specifier = ">=3.14.6" },
     { name = "silero-vad", specifier = ">=6.2.3" },
     { name = "soundfile", specifier = ">=0.12" },
+    { name = "tojyutping", marker = "extra == 'train'", specifier = ">=3.2" },
     { name = "torch", specifier = ">=2.8", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchvision", specifier = ">=0.26.0" },
     { name = "tqdm" },
     { name = "transformers", specifier = ">=5.19.0" },
 ]
-provides-extras = ["baseline"]
+provides-extras = ["train", "baseline"]
 
 [[package]]
 name = "h11"
@@ -2027,6 +2031,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b9/1e/633e30237b94e383cf814145499079f3bb9cdd4aeafc1bc42e01b0f810a6/tiktoken-0.14.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:380873f330b741c4435574f37edb20813d04603ace2d53e0a63560e1fec83010", size = 1250980, upload-time = "2026-08-17T19:49:02.274Z" },
     { url = "https://files.pythonhosted.org/packages/cb/56/4c12f07b812f84206f38d723eb1ebfdd34bad9309b5dbc0bee6bbcff4cbf/tiktoken-0.14.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:3fd7c14b1cb45b486c39fc9b3443bb341f3e2fc7e6f31247f3435a5836651632", size = 1315434, upload-time = "2026-08-17T19:49:03.434Z" },
     { url = "https://files.pythonhosted.org/packages/c9/e0/c65603f0c44811def666d3fbf611bf2af3b5e1ef613e06c19411419830b3/tiktoken-0.14.0-cp313-cp313-win_amd64.whl", hash = "sha256:90a762670c7f968184723769a06ed51f5cf5ce5dcd1e30164f25c72d85c2d1f1", size = 940883, upload-time = "2026-08-17T19:49:04.583Z" },
+]
+
+[[package]]
+name = "tojyutping"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fe/fe/d10b672782478e87b687779d7303c35d763132cf1b04ad4209c95eb7de4a/tojyutping-3.2.0.tar.gz", hash = "sha256:3a78560ff83716294bb87e88117e8f81ea3b4ef6fc6e9a54411d0e1dd356b6f0", size = 302121, upload-time = "2024-09-24T23:49:08.471Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/21/73/232b2ddc09db98b1ae37df6aebffa9c4808196e588d73f40cd6d26596cb7/ToJyutping-3.2.0-py3-none-any.whl", hash = "sha256:af7fe10095a3ce91b5cf2bcd7e7c62002407f432c3083562f725ddc140c6fd7e", size = 287884, upload-time = "2024-09-24T23:49:06.286Z" },
 ]
 
 [[package]]

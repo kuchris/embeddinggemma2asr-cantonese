@@ -18,6 +18,12 @@ from transformers import AutoModel, AutoProcessor
 MODEL_ID = "google/embeddinggemma-2"
 SAMPLE_RATE = 16000
 FRAME_SEC = 0.04  # 每格 audio feature 40ms（25 格／秒）
+AUDIO_LAYERS = 12  # audio_tower 有 12 層 conformer（1024 維）
+
+
+def layer_dim(layer: int) -> int:
+    """0 = embed_audio 之後 512 維；1–11 = 第幾層 conformer 輸出 1024 維；12 = 最後一層再經 output_proj，1536 維。"""
+    return 512 if layer == 0 else 1536 if layer == AUDIO_LAYERS else 1024
 
 
 def pick_dtype() -> torch.dtype:
@@ -41,15 +47,23 @@ class Encoder:
     # ---------- 逐格 feature（reader 嘅輸入） ----------
 
     @torch.inference_mode()
-    def frames(self, wavs: list[np.ndarray]) -> list[torch.Tensor]:
-        """每段 16kHz mono 音頻 → (T, 512) 逐格 feature（已去 padding，放喺 CPU，fp16）。"""
+    def frames(self, wavs: list[np.ndarray], layers=(0,)) -> list[torch.Tensor]:
+        """每段 16kHz mono 音頻 → (T, D) 逐格 feature（已去 padding，放喺 CPU，fp16）。
+
+        layers：要邊幾層，按次序駁埋。0 = embed_audio 之後嘅 512 維（原本用開嗰種）；
+        1–11 = audio_tower 第幾層 conformer 嘅輸出（1024 維）；12 = 最後一層經 output_proj（1536 維）。
+        （hidden_states 有 13 個：[0] 係入第 1 層之前，[1]–[11] 係第 1–11 層，[12] = last_hidden_state。）
+        """
+        layers = tuple(layers)
         fe = self.processor.feature_extractor(
             wavs, sampling_rate=SAMPLE_RATE, return_tensors="pt", padding="longest")
         out = self.model.get_audio_features(
             fe["input_features"].to(self.device, self.dtype),
-            fe["input_features_mask"].to(self.device), return_dict=True)
-        feats, mask = out.pooler_output, out.attention_mask
-        return [f[m].to("cpu", torch.float16) for f, m in zip(feats, mask)]
+            fe["input_features_mask"].to(self.device), return_dict=True,
+            output_hidden_states=any(l > 0 for l in layers))
+        hs = out.hidden_states
+        feats = torch.cat([out.pooler_output if l == 0 else hs[l] for l in layers], -1)
+        return [f[m].to("cpu", torch.float16) for f, m in zip(feats, out.attention_mask)]
 
     # ---------- 768 維 embedding（同 sentence-transformers 一樣：mean pooling + normalize） ----------
 

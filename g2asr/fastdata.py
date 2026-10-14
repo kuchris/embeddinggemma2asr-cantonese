@@ -9,23 +9,56 @@ import threading
 
 import torch
 
+from .encoder import layer_dim
+
 
 class Preloaded:
-    def __init__(self, paths, unit_to_id: dict[str, int]):
-        self.shards: list[torch.Tensor] = []  # 每個 shard 一大塊連續 (總格數, 512) fp16
-        self.items: list[tuple[int, int, int, torch.Tensor]] = []  # (shard, 開始格, 格數, 字 id)
+    """use_layers：shard 入面有多層 feature（shard["layers"]）嗰陣揀用邊幾層，只載入嗰幾層慳 RAM。
+    jy_vocab：畀咗就順便整粵拼標籤（輔助 CTC），新音節會加入呢個 dict（grow=False 就略過）。"""
+
+    def __init__(self, paths, unit_to_id: dict[str, int], use_layers=None, jy_vocab: dict | None = None,
+                 grow: bool = True):
+        self.shards: list[torch.Tensor] = []  # 每個 shard 一大塊連續 (總格數, D) fp16
+        self.items: list[tuple] = []  # (shard, 開始格, 格數, 字 id, 粵拼 id 或 None)
+        self.jy = jy_vocab is not None
+        if self.jy:
+            from .jyutping import jyutping_units  # 要裝 ToJyutping（uv sync --extra train）
         for path in paths:
             shard = torch.load(path)
+            cols = self._columns(shard.get("layers", [0]), use_layers)
             offset, keep = 0, []
             for f, us in zip(shard["feats"], shard["units"]):
                 ids = [unit_to_id[u] for u in us if u in unit_to_id]
+                jy = None
+                if self.jy:
+                    jy = []
+                    for j in jyutping_units(us):
+                        if j not in jy_vocab and grow:
+                            jy_vocab[j] = len(jy_vocab) + 1  # 0 留畀 blank
+                        if j in jy_vocab:
+                            jy.append(jy_vocab[j])
+                    jy = torch.tensor(jy, dtype=torch.int32)
                 if ids and len(f) >= 2 * len(ids):  # CTC 要夠格數
-                    keep.append(f)
-                    self.items.append((len(self.shards), offset, len(f), torch.tensor(ids, dtype=torch.int32)))
+                    keep.append(f if cols is None else f[:, cols])
+                    self.items.append((len(self.shards), offset, len(f), torch.tensor(ids, dtype=torch.int32), jy))
                     offset += len(f)
             self.shards.append(torch.cat(keep) if keep else torch.empty(0, 512, dtype=torch.float16))
             del shard, keep
         self.frames = sum(s.shape[0] for s in self.shards)
+
+    @staticmethod
+    def _columns(have: list[int], want):
+        """shard 有 have 呢幾層（按次序駁埋），想要 want 呢幾層 → 要攞嘅欄（全部要就 None）。"""
+        if want is None or list(want) == list(have):
+            return None
+        starts, pos = {}, 0
+        for l in have:
+            starts[l] = pos
+            pos += layer_dim(l)
+        missing = [l for l in want if l not in starts]
+        if missing:
+            raise ValueError(f"shard 冇第 {missing} 層（只有 {have}）")
+        return torch.cat([torch.arange(starts[l], starts[l] + layer_dim(l)) for l in want])
 
     def batches(self, max_frames: int, shuffle: bool, seed: int = 0) -> list[list[int]]:
         """全部句子按長度排序再切 batch（每批 padding 好少），再打亂 batch 次序。"""
@@ -46,11 +79,15 @@ class Preloaded:
         lengths = torch.tensor([self.items[i][2] for i in group])
         feats = torch.zeros(len(group), int(lengths.max()), self.shards[0].shape[1], dtype=torch.float16)
         for row, i in enumerate(group):
-            s, off, n, _ = self.items[i]
+            s, off, n = self.items[i][:3]
             feats[row, :n] = self.shards[s][off:off + n]
         targets = torch.cat([self.items[i][3] for i in group]).long()
         target_lengths = torch.tensor([len(self.items[i][3]) for i in group])
-        return feats.pin_memory(), lengths, targets, target_lengths
+        if not self.jy:
+            return feats.pin_memory(), lengths, targets, target_lengths
+        jy = torch.cat([self.items[i][4] for i in group]).long()
+        jy_lengths = torch.tensor([len(self.items[i][4]) for i in group])
+        return feats.pin_memory(), lengths, targets, target_lengths, jy, jy_lengths
 
 
 def prefetch(data: Preloaded, groups: list[list[int]], depth: int = 6):
@@ -58,12 +95,17 @@ def prefetch(data: Preloaded, groups: list[list[int]], depth: int = 6):
     q: queue.Queue = queue.Queue(maxsize=depth)
 
     def worker():
-        for g in groups:
-            q.put(data.collate(g))
+        try:
+            for g in groups:
+                q.put(data.collate(g))
+        except BaseException as e:  # 傳返畀主線程，唔係主線程會永遠等落去
+            q.put(e)
         q.put(None)
 
     threading.Thread(target=worker, daemon=True).start()
     while (batch := q.get()) is not None:
+        if isinstance(batch, BaseException):
+            raise batch
         yield batch
 
 

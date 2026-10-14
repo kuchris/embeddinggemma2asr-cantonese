@@ -2,7 +2,9 @@
 
 大約每小時音頻 92MB（25 格／秒 × 512 維 × fp16）。
 
-用法：python scripts/extract.py --dataset wordshk --out data/feats/wordshk [--max-hours 20]
+用法：python scripts/extract.py --dataset wordshk --out data/feats/wordshk [--max-hours 20] [--layers 4,8,12,0]
+
+--layers：存 encoder 邊幾層（0 = 原本 512 維；1–11 = audio_tower 各層 1024 維；12 = 最後輸出 1536 維）。
 """
 
 import sys
@@ -30,7 +32,9 @@ parser.add_argument("--max-sec", type=float, default=20, help="長過呢個嘅�
 parser.add_argument("--batch", type=int, default=32)
 parser.add_argument("--shard-size", type=int, default=4000)
 parser.add_argument("--workers", type=int, default=8, help="解碼音頻嘅線程數")
+parser.add_argument("--layers", default="0", help="存邊幾層 feature（逗號分隔，按次序駁埋）")
 args = parser.parse_args()
+layers = [int(x) for x in args.layers.split(",")]
 
 repo, split, text_col = DATASETS[args.dataset]
 out = Path(args.out)
@@ -41,13 +45,13 @@ done, skip = state["shards"], state["rows"]
 
 ds = iter_rows(repo, split, ["audio", text_col], skip=skip)  # 已做嘅行直接跳過，唔使重新落載
 enc = Encoder()
-shard = {"feats": [], "units": [], "text": []}
+shard = {"feats": [], "units": [], "text": [], "layers": layers}
 pending, hours, n_seen, n_skipped = [], 0.0, skip, 0
 total_hours = state["hours"]
 
 
 def flush_batch():
-    feats = enc.frames([w for w, _, _ in pending])
+    feats = enc.frames([w for w, _, _ in pending], layers)
     for f, (_, us, text) in zip(feats, pending):
         shard["feats"].append(f)
         shard["units"].append(us)
@@ -61,7 +65,7 @@ def flush_shard():
         torch.save(shard, out / f"shard_{done:04d}.pt")
         done += 1
         progress.write_text(json.dumps({"shards": done, "rows": n_seen, "hours": total_hours + hours}))
-    shard = {"feats": [], "units": [], "text": []}
+    shard = {"feats": [], "units": [], "text": [], "layers": layers}
 
 
 def prepare(row):

@@ -25,6 +25,13 @@ def _logsumexp(a: float, b: float) -> float:
 def beam_search(log_probs: np.ndarray, units: list[str], lm: NGramLM | None = None, alpha: float = 0.5,
                 beta: float = 1.0, beam: int = 8, top_k: int = 8, prune: float = -8.0) -> list[int]:
     """log_probs：(T, V+1)，第 0 類係 blank。回傳字 id（對應 units index）。"""
+    return beam_search_nbest(log_probs, units, lm, alpha, beta, beam, top_k, prune)[0][0]
+
+
+def beam_search_nbest(log_probs: np.ndarray, units: list[str], lm: NGramLM | None = None, alpha: float = 0.5,
+                      beta: float = 1.0, beam: int = 8, top_k: int = 8,
+                      prune: float = -8.0) -> list[tuple[list[int], float]]:
+    """同 beam_search 一樣，但回傳成個 beam：[(字 id, 總分)]，分數由高至低。"""
     # beams：prefix（tuple of ids）→ [p_blank, p_nonblank, lm 分數]
     beams = {(): [0.0, NEG_INF, 0.0]}
     for frame in log_probs:
@@ -72,4 +79,4 @@ def beam_search(log_probs: np.ndarray, units: list[str], lm: NGramLM | None = No
             score += alpha * lm.logp(tuple(units[i] for i in prefix), EOS)
         return score
 
-    return list(max(beams.items(), key=final)[0])
+    return sorted(((list(kv[0]), final(kv)) for kv in beams.items()), key=lambda x: x[1], reverse=True)

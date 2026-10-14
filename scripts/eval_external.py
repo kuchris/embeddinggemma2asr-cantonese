@@ -47,7 +47,7 @@ for row in iter_rows(args.repo, args.split, ["audio", args.text_col], args.confi
     refs.append(units(row[args.text_col]))
     if len(wavs) >= args.n:
         break
-feats = [f for i in range(0, len(wavs), 16) for f in enc.frames(wavs[i:i + 16])]
+feats_by_layers = {}  # 唔同 checkpoint 可能用唔同層嘅 feature
 if args.export:
     exp = Path(args.export)
     exp.mkdir(parents=True, exist_ok=True)
@@ -66,6 +66,10 @@ for path in args.ckpts:
     model = Reader(ck["vocab_emb"], **ck["config"]).cuda().eval()
     model.load_state_dict(ck["model"])
     vocab = set(ck["units"])
+    if model.feat_layers not in feats_by_layers:
+        feats_by_layers[model.feat_layers] = [f for i in range(0, len(wavs), 16)
+                                              for f in enc.frames(wavs[i:i + 16], model.feat_layers)]
+    feats = feats_by_layers[model.feat_layers]
     errors, errors_lm, hyps = 0, 0, []
     with torch.no_grad():
         for f, ref in zip(feats, refs):

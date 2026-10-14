@@ -21,6 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+train = [
+    "ToJyutping>=3.2",
+]
 baseline = [
     "funasr>=1.4.16",
     "kaldi-native-fbank>=1.22.3",

@@ -4,6 +4,10 @@
 
 用法：python scripts/train.py data/feats/wordshk data/feats/mixed --vocab data/vocab.pt --out runs/frozen
       [--head frozen|tuned|learned] [--epochs 30] [--max-frames 40000]
+      [--use-layers 0,4,8] [--jy-weight 0.3 --jy-layer 3]
+
+--use-layers：shard 有多層 feature 嗰陣揀用邊幾層（預設全部；見 Encoder.frames）。
+--jy-weight：加粵拼輔助 CTC（loss = (1−w)×字 + w×粵拼），推理唔使用；要裝 ToJyutping。
 """
 
 import sys
@@ -47,6 +51,9 @@ parser.add_argument("--resume", action="store_true")
 parser.add_argument("--stream", action="store_true",
                     help="唔預先載入 RAM，逐個 shard 由硬碟讀（RAM 唔夠先用；慢好多）")
 parser.add_argument("--max-steps", type=int, default=0, help="行咗幾多步就停（測試用，0 = 唔限）")
+parser.add_argument("--use-layers", help="用 shard 入面邊幾層 feature，例如 0 或者 4,8,12,0（預設全部）")
+parser.add_argument("--jy-weight", type=float, default=0.0, help="粵拼輔助 CTC 嘅比重（0 = 唔用）")
+parser.add_argument("--jy-layer", type=int, default=3, help="粵拼 head 駁喺 reader 第幾層後面")
 args = parser.parse_args()
 
 torch.manual_seed(0)
@@ -66,19 +73,29 @@ for d in args.feat_dirs:
     train_paths += paths[:-1]
     val_paths.append(paths[-1])
 
-model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, heads=args.heads, dropout=args.dropout,
-               head=args.head).to(device)
-print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
-      f"字典 {len(vocab['units'])}，head={args.head}，train shard {len(train_paths)}，val shard {len(val_paths)}")
+use_layers = [int(x) for x in args.use_layers.split(",")] if args.use_layers else None
+feat_layers = use_layers or torch.load(train_paths[0], mmap=True).get("layers", [0])
+jy_vocab = {} if args.jy_weight > 0 else None
+if args.stream and (args.use_layers or jy_vocab is not None):
+    raise SystemExit("--stream 唔支援 --use-layers／--jy-weight")
 
 if args.stream:
     # 數晒所有 shard 嘅 batch 數，畀 cosine schedule 用（只用第一個 shard 推算會估少，lr 太早跌到 0）
     steps_per_epoch = sum(1 for _ in batches(train_paths, unit_to_id, args.max_frames, shuffle=False))
 else:
     t_load = time.time()
-    data = Preloaded(train_paths, unit_to_id)
+    data = Preloaded(train_paths, unit_to_id, use_layers, jy_vocab)
+    val_data = Preloaded(val_paths, unit_to_id, use_layers)
     steps_per_epoch = len(data.batches(args.max_frames, shuffle=False))
-    print(f"預先載入 {len(data.items)} 句、{data.frames / 25 / 3600:.0f} 小時，用咗 {time.time() - t_load:.0f}s")
+    print(f"預先載入 {len(data.items)} 句、{data.frames / 25 / 3600:.0f} 小時，用咗 {time.time() - t_load:.0f}s"
+          + (f"；粵拼 {len(jy_vocab)} 個音節" if jy_vocab is not None else ""))
+
+model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, heads=args.heads, dropout=args.dropout,
+               head=args.head, feat_layers=feat_layers, jy_classes=len(jy_vocab) if jy_vocab else 0,
+               jy_layer=args.jy_layer).to(device)
+print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
+      f"字典 {len(vocab['units'])}，head={args.head}，feature 層 {list(feat_layers)}，"
+      f"粵拼比重 {args.jy_weight}（第 {args.jy_layer} 層），train shard {len(train_paths)}，val shard {len(val_paths)}")
 total_steps = max(steps_per_epoch * args.epochs, args.warmup + 1)
 print(f"每個 epoch {steps_per_epoch} 步，總共 {total_steps} 步")
 opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -100,7 +117,7 @@ if args.resume and ckpt_path.exists():
 def save(path: Path):
     torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "sched": sched.state_dict(),
                 "step": step, "epoch": epoch, "best_cer": best_cer, "config": model.config,
-                "units": vocab["units"], "vocab_emb": vocab["emb"]}, path)
+                "units": vocab["units"], "vocab_emb": vocab["emb"], "jy_vocab": jy_vocab}, path)
 
 
 @torch.no_grad()
@@ -108,7 +125,9 @@ def evaluate(show: int = 5) -> float:
     model.eval()
     errors = total = 0
     examples = []
-    for feats, lengths, targets, target_lengths, texts in batches(val_paths, unit_to_id, args.max_frames, False):
+    val = (batches(val_paths, unit_to_id, args.max_frames, False) if args.stream
+           else (val_data.collate(g) for g in val_data.batches(args.max_frames, shuffle=False)))
+    for feats, lengths, targets, target_lengths, *_ in val:
         with torch.autocast("cuda", dtype=amp_dtype):
             log_probs = model(feats.to(device), lengths.to(device))
         refs = targets.split(target_lengths.tolist())
@@ -134,15 +153,20 @@ while epoch < args.epochs:
         source = ((f, l, t, tl) for f, l, t, tl, _ in batches(train_paths, unit_to_id, args.max_frames, True))
     else:
         source = prefetch(data, data.batches(args.max_frames, shuffle=True, seed=epoch))
-    for feats, lengths, targets, target_lengths in source:
+    for feats, lengths, targets, target_lengths, *jy in source:
         feats, lengths = feats.to(device, non_blocking=True), lengths.to(device)
         if args.time_masks or args.feat_masks:
             feats = augment_gpu(feats, lengths, args.time_masks, args.time_mask_width,
                                 args.feat_masks, args.feat_mask_width)
         with torch.autocast("cuda", dtype=amp_dtype):
-            log_probs = model(feats, lengths)
+            res = model(feats, lengths, return_jy=bool(jy))
+        log_probs, jy_lp = res if jy else (res, None)
         loss = F.ctc_loss(log_probs.float().transpose(0, 1), targets.to(device), lengths, target_lengths.to(device),
                           blank=0, zero_infinity=True)
+        if jy:
+            jy_loss = F.ctc_loss(jy_lp.transpose(0, 1), jy[0].to(device), lengths, jy[1].to(device),
+                                 blank=0, zero_infinity=True)
+            loss = (1 - args.jy_weight) * loss + args.jy_weight * jy_loss
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.unscale_(opt)
@@ -155,7 +179,8 @@ while epoch < args.epochs:
 
         if step % 100 == 0:
             print(f"step {step}/{total_steps}  epoch {epoch}  loss {loss_sum / loss_n:.3f}  "
-                  f"lr {sched.get_last_lr()[0]:.2e}  scale {model.log_scale.exp().item():.1f}  {time.time() - t0:.0f}s")
+                  f"lr {sched.get_last_lr()[0]:.2e}  scale {model.log_scale.exp().item():.1f}  {time.time() - t0:.0f}s"
+                  + (f"  層權重 {' '.join(f'{w:.2f}' for w in model.mix_weights())}" if len(feat_layers) > 1 else ""))
             loss_sum, loss_n = 0.0, 0
         if step % args.eval_every == 0:
             cer = evaluate()
