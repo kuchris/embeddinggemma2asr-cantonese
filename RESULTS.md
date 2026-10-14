@@ -106,3 +106,19 @@ reader 只係學識對準 train 過嘅字附近，冇學到通用「聲音 → �
 
 98 小時（wordshk 限 60h）、冇遮罩、lr schedule 有 bug（第 6000 步 lr 已經跌到 0）：驗證 CER **18.26%**（greedy）。
 驗證句子同第二輪唔同，數字唔可以直接比較。
+
+## 第三輪：加真人數據（MDCC）
+
+MDCC（`ming030890/mdcc`）：香港粵語有聲書真人錄音，逐字口語字幕；train 約 6.5 萬句（約 73 小時）。
+
+### 起點：MDCC test 頭 2000 句（107.6 分鐘），未用 MDCC train
+
+| | greedy | + LM（α=0.7 β=4.5） |
+|---|---|---|
+| learned | 18.9% | 15.8% |
+| learned 大 | 18.0% | **15.4%** |
+| frozen | 19.0% | 15.8% |
+| SenseVoice 2024-07-17 | **8.0%** | |
+| SenseVoice 2025-09-09-yue | **7.7%** | |
+
+真人錄音差距更大（約一倍）。注意：唔知 SenseVoice 自己有冇用 MDCC train 過。
