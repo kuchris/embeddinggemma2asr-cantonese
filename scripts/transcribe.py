@@ -1,6 +1,7 @@
 """用 train 好嘅 reader 轉錄音頻檔。
 
-用法：python scripts/transcribe.py runs/frozen/best.pt samples/*.wav [--lm data/lm.pkl --alpha 0.7 --beta 5.0]
+用法：python scripts/transcribe.py runs/learned_r3/best.pt audio.wav [--lm data/lm_r3.pkl --alpha 0.7 --beta 5.0]
+      長過 20 秒嘅音頻會先用 VAD 切出有人講嘢嘅段落（--no-vad 就照舊每 30 秒硬切）
 """
 
 import sys
@@ -21,6 +22,7 @@ from g2asr.encoder import SAMPLE_RATE, Encoder
 from g2asr.lm import NGramLM
 from g2asr.reader import Reader
 from g2asr.text import edit_distance, join_units, units
+from g2asr.vad import MAX_SEC, speech_segments
 
 CHUNK_SEC = 30  # 長音頻切 30 秒一段
 
@@ -30,6 +32,7 @@ parser.add_argument("audio", nargs="+")
 parser.add_argument("--lm", help="n-gram LM（build_lm.py 整）；唔畀就用 greedy")
 parser.add_argument("--alpha", type=float, default=0.7)
 parser.add_argument("--beta", type=float, default=5.0)
+parser.add_argument("--no-vad", action="store_true", help="長音頻唔用 VAD，每 30 秒硬切")
 args = parser.parse_args()
 
 ck = torch.load(args.ckpt, weights_only=False)
@@ -48,10 +51,14 @@ for path in args.audio:
 for path in args.audio:
     wav, _ = librosa.load(path, sr=SAMPLE_RATE, mono=True)
     t0 = time.time()
-    chunks = [wav[i:i + CHUNK_SEC * SAMPLE_RATE] for i in range(0, len(wav), CHUNK_SEC * SAMPLE_RATE)]
+    if len(wav) > MAX_SEC * SAMPLE_RATE and not args.no_vad:
+        chunks = [wav[a:b] for a, b in speech_segments(wav)]
+    else:
+        chunks = [wav[i:i + CHUNK_SEC * SAMPLE_RATE] for i in range(0, len(wav), CHUNK_SEC * SAMPLE_RATE)]
     ids = []
+    feats_all = [f for i in range(0, len(chunks), 8) for f in enc.frames(chunks[i:i + 8])]
     with torch.no_grad():
-        for feats in enc.frames(chunks):
+        for feats in feats_all:
             lengths = torch.tensor([len(feats)]).cuda()
             log_probs = model(feats[None].cuda().float(), lengths)
             if lm:

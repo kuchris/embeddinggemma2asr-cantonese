@@ -31,6 +31,7 @@ from g2asr.encoder import SAMPLE_RATE, Encoder
 from g2asr.lm import NGramLM
 from g2asr.reader import Reader
 from g2asr.text import join_units, units
+from g2asr.vad import speech_segments
 
 SPICE = Path(__file__).resolve().parent.parent / "data" / "spice"
 CHUNK_SEC = 30
@@ -39,6 +40,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("ckpts", nargs="*")
 parser.add_argument("--lm")
 parser.add_argument("--prepare", action="store_true")
+parser.add_argument("--vad-threshold", type=float, default=0.5)
 args = parser.parse_args()
 
 
@@ -92,6 +94,11 @@ if args.prepare:
         for i in range(0, len(seg), CHUNK_SEC * SAMPLE_RATE):
             sf.write(out / "long" / f"{i // (CHUNK_SEC * SAMPLE_RATE):04d}.wav", seg[i:i + CHUNK_SEC * SAMPLE_RATE], SAMPLE_RATE)
         (out / "long" / "ref.txt").write_text(" ".join(t for _, _, t in utts), encoding="utf-8")
+        (out / "vad").mkdir(parents=True, exist_ok=True)
+        for old in (out / "vad").glob("*.wav"):
+            old.unlink()
+        for i, (a, b) in enumerate(speech_segments(seg, args.vad_threshold)):
+            sf.write(out / "vad" / f"{i:04d}.wav", seg[a:b], SAMPLE_RATE)
     print(f"已存去 {SPICE / 'prepared'}")
 
 if not args.ckpts:
@@ -120,7 +127,7 @@ for path in args.ckpts:
     model = Reader(ck["vocab_emb"], **ck["config"]).cuda().eval()
     model.load_state_dict(ck["model"])
     print(f"\n== {path}")
-    total = {"seg": [0, 0, 0], "long": [0, 0, 0]}
+    total = {"seg": [0, 0, 0], "long": [0, 0, 0], "vad": [0, 0, 0]}
     for name, (wav, start, end, utts) in talkers.items():
         segs = [wav[int(a * SAMPLE_RATE):int(b * SAMPLE_RATE)] for a, b, _ in utts]
         refs = [clean(t) for _, _, t in utts]
@@ -143,6 +150,18 @@ for path in args.ckpts:
         le_g = Levenshtein.distance(hyp_g, ref_long)
         le_l = Levenshtein.distance(hyp_l, ref_long) if lm else 0
         total["long"] = [total["long"][0] + le_g, total["long"][1] + le_l, total["long"][2] + len(ref_long)]
+
+        # VAD：只轉錄有人講嘢嘅段落
+        t1 = time.time()
+        vad_segs = [seg[a:b] for a, b in speech_segments(seg, args.vad_threshold)]
+        g_vad, l_vad = decode(model, ck, vad_segs)
+        vad_time = time.time() - t1
+        ve_g = Levenshtein.distance(norm([u for h in g_vad for u in h]), ref_long)
+        ve_l = Levenshtein.distance(norm([u for h in l_vad for u in h]), ref_long) if lm else 0
+        total["vad"] = [total["vad"][0] + ve_g, total["vad"][1] + ve_l, total["vad"][2] + len(ref_long)]
+        print(f"  {name} VAD：{len(vad_segs)} 段，共 {sum(map(len, vad_segs)) / SAMPLE_RATE / 60:.1f} 分鐘"
+              f"｜greedy {ve_g / len(ref_long):.1%}" + (f" +LM {ve_l / len(ref_long):.1%}" if lm else "")
+              + f"（用 {vad_time:.1f}s，連 VAD）")
         print(f"  {name}：逐句 greedy {e_g / n:.1%}" + (f" +LM {e_l / n:.1%}" if lm else "")
               + f"｜長音頻 greedy {le_g / len(ref_long):.1%}" + (f" +LM {le_l / len(ref_long):.1%}" if lm else "")
               + f"（{len(seg) / SAMPLE_RATE / 60:.1f} 分鐘用 {elapsed:.1f}s）")
