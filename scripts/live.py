@@ -1,6 +1,6 @@
 """即時聽寫：對住咪講嘢，每講完一句（停頓約半秒）就轉錄一次。Ctrl+C 離開。
 
-用法：uv run --with sounddevice python scripts/live.py [--lm] [--ckpt runs/learned_r3/best.pt]
+用法：uv run --with sounddevice python scripts/live.py [--lm] [--ckpt runs/learned_r4/best_infer.pt]
       --file x.wav 可以用錄音檔模擬（測試用）
 """
 
@@ -30,9 +30,9 @@ BLOCK = 512  # 32ms，silero 每次睇呢個長度
 PRE_ROLL = 10  # 開始講嘢前保留 10 格（約 0.3 秒），費事切走第一個字
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--ckpt", default=str(ROOT / "runs" / "learned_r3" / "best.pt"))
+parser.add_argument("--ckpt", default=str(ROOT / "runs" / "learned_r4" / "best_infer.pt"))
 parser.add_argument("--lm", action="store_true", help="用 beam search + LM（準啲，慢少少）")
-parser.add_argument("--lm-path", default=str(ROOT / "data" / "lm_r3.pkl"))
+parser.add_argument("--lm-path", default=str(ROOT / "data" / "lm_r4.pkl"))
 parser.add_argument("--silence", type=int, default=500, help="停頓幾多毫秒當一句完")
 parser.add_argument("--file", help="用錄音檔模擬咪（測試用）")
 args = parser.parse_args()
