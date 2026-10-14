@@ -214,3 +214,34 @@ MDCC（`ming030890/mdcc`）：香港粵語有聲書真人錄音，逐字口語�
 - **兩邊都用 GPU：我哋 greedy 快大約 3 倍。** 加 LM（純 Python beam search）就慢返落 300× 左右，同 SenseVoice 差唔多。
 - 準確度：MDCC 贏；其他（尤其自然對話）輸。
 - Windows 上 batch 太大會頂爆 VRAM 變慢好多（我哋 bs 16 最好）；量度有波動，以上取最好嗰次。
+
+## 第四輪：老師標籤（知識蒸餾，Colab A100）
+
+**數據**：`alvanlii/cantonese-radio`（香港電台／podcast，有存取限制）每句都有 Whisper 同 SenseVoice 兩個轉錄。
+`scripts/extract_radio.py`：統一寫法（「系→係」，保留「系統／學系」等）、刪語氣詞（誒嗯呃），
+**兩個老師 CER < 25%、SNR ≥ 15、1–30 秒**先留，用 SenseVoice 版本做標籤。
+85 個 parquet 檔（每隔 12 個揀一個）、3 條流程並行，保留率約 60–75%，共 **519 小時**。
+（最初試過 CER < 15%，只留 23%，太少。）
+
+加埋 daily + mixed + wordshk + MDCC ≈ **720 小時**；字典 12368；LM 27 萬句。
+learned reader（20.6M 連字典），12 epoch、14076 步、每批 6 萬格（12 萬格會 OOM），A100 約 1 小時 40 分。
+
+驗證 CER（驗證集多咗 3 個 radio shard，唔可以同之前直接比）：
+1000 步 26.5% → 3000 步 13.1% → 6000 步 10.3% → 10000 步 9.0% → 最後 **8.6%**。
+
+| | 第三輪（冇 radio） | **第四輪（+519h radio）** | SenseVoice GPU |
+|---|---|---|---|
+| 原本 test greedy ／ +LM | 13.98% ／ 11.83% | **12.21% ／ 11.57%** | 9.7% |
+| MDCC test greedy ／ +LM | 7.1% ／ 5.6% | **6.6%** ／ 5.7% | 7.9% |
+| **SpiCE 對話（VAD）greedy ／ +LM** | 47.8% ／ 45.7% | **38.0% ／ 38.5%** | 28.0% |
+
+- **真人對話進步最大**：SpiCE 47.8% → 38.0%（約 10 個百分點），同 SenseVoice 差距由 18 點收窄到 10 點。
+- 讀稿類（原本 test、MDCC）只係小幅進步；MDCC 加 LM 冇再進步（5.6% → 5.7%）。
+- SpiCE 上 LM 反而差少少（38.0% → 38.5%）：α／β 係喺讀稿類 dev 揀，唔啱對話。
+- 學生大概只能追近老師（SenseVoice）；想再好要更準嘅老師（Whisper large-v3／Qwen3-ASR）或者解凍 encoder。
+
+**成本**：A100 每小時 5.3 units，成個流程（抽 feature 約 2 小時 + train + 評估）共 **22.4 units**。
+抽 feature 時 GPU 大部分時間等 CPU（解碼／重新取樣音頻）；train 時等硬碟讀 shard（已改 `g2asr/fastdata.py` 預先載入 RAM，下次用）。
+
+**檔案**：本機 `runs/learned_r4/best_infer.pt`（推理用，121MB）、`data/lm_r4.pkl`、`runs/round4/`（log）；
+Google Drive `MyDrive/gemma2asr/round4/`（連完整 checkpoint）、`MyDrive/gemma2asr/feats_r4/`（全部 feature，63GB）。
