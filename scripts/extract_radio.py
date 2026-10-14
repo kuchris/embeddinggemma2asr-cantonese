@@ -4,6 +4,7 @@
 數據集有存取限制：要先喺 Hugging Face 同意條款，再 `hf auth login`。
 
 用法：python scripts/extract_radio.py --out data/feats/radio --max-hours 500 [--stride 12]
+      [--layers 6,9,12,0 --pca data/pca.pt --fp8]   （同 extract.py 一樣）
 """
 
 import sys
@@ -24,7 +25,7 @@ from huggingface_hub import HfFileSystem, hf_hub_download
 from rapidfuzz.distance import Levenshtein
 
 from g2asr.data import RAW_DIR, decode_audio
-from g2asr.encoder import SAMPLE_RATE, Encoder
+from g2asr.encoder import SAMPLE_RATE, Encoder, layer_dim
 from g2asr.text import units
 
 REPO = "alvanlii/cantonese-radio"
@@ -42,7 +43,15 @@ parser.add_argument("--min-snr", type=float, default=15)
 parser.add_argument("--max-sec", type=float, default=30)
 parser.add_argument("--batch", type=int, default=32)
 parser.add_argument("--workers", type=int, default=12)
+parser.add_argument("--layers", default="0", help="存邊幾層 feature（見 extract.py）")
+parser.add_argument("--pca", help="PCA 檔（fit_pca.py）")
+parser.add_argument("--fp8", action="store_true", help="feature 用 float8_e4m3fn 存")
 args = parser.parse_args()
+layers = [int(x) for x in args.layers.split(",")]
+pca = torch.load(args.pca)["pca"] if args.pca else None
+meta = {"layers": layers, "dims": [pca[l][1].shape[1] if pca and l in pca else layer_dim(l) for l in layers],
+        "pca": args.pca, "fp8": args.fp8}
+STORE = torch.float8_e4m3fn if args.fp8 else torch.float16
 
 
 def clean_label(text: str) -> str:
@@ -81,7 +90,7 @@ def download(path: str) -> Path:
 
 
 enc = Encoder()
-shard = {"feats": [], "units": [], "text": []}
+shard = {"feats": [], "units": [], "text": [], **meta}
 
 
 def flush_shard():
@@ -89,7 +98,7 @@ def flush_shard():
     if shard["feats"]:
         torch.save(shard, out / f"shard_{state['shards']:04d}.pt")
         state["shards"] += 1
-    shard = {"feats": [], "units": [], "text": []}
+    shard = {"feats": [], "units": [], "text": [], **meta}
 
 
 def decode_row(row):
@@ -119,8 +128,8 @@ for n, path in enumerate(todo):
                 if w is not None and len(w) <= args.max_sec * SAMPLE_RATE]
         for i in range(0, len(good), args.batch):
             chunk = good[i:i + args.batch]
-            for f, (w, us, text) in zip(enc.frames([w for w, _, _ in chunk]), chunk):
-                shard["feats"].append(f)
+            for f, (w, us, text) in zip(enc.frames([w for w, _, _ in chunk], layers, pca), chunk):
+                shard["feats"].append(f.to(STORE))
                 shard["units"].append(us)
                 shard["text"].append(text)
                 state["hours"] += len(w) / SAMPLE_RATE / 3600

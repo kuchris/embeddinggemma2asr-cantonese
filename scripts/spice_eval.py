@@ -91,7 +91,7 @@ def decode(model, ck, wavs):
     """一批音頻 → (greedy 單位, LM 單位)。"""
     g_out, l_out = [], []
     for i in range(0, len(wavs), 8):
-        for f in enc.frames(wavs[i:i + 8], model.feat_layers):
+        for f in enc.frames(wavs[i:i + 8], model.feat_layers, model.pca()):
             lengths = torch.tensor([len(f)]).cuda()
             with torch.no_grad():
                 lp = model(f[None].cuda().float(), lengths)

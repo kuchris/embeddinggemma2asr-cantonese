@@ -66,10 +66,11 @@ for path in args.ckpts:
     model = Reader(ck["vocab_emb"], **ck["config"]).cuda().eval()
     model.load_state_dict(ck["model"])
     vocab = set(ck["units"])
-    if model.feat_layers not in feats_by_layers:
-        feats_by_layers[model.feat_layers] = [f for i in range(0, len(wavs), 16)
-                                              for f in enc.frames(wavs[i:i + 16], model.feat_layers)]
-    feats = feats_by_layers[model.feat_layers]
+    key = (model.feat_layers, path if model.pca_dims else None)  # 有 PCA 就每個 checkpoint 各自抽
+    if key not in feats_by_layers:
+        feats_by_layers[key] = [f for i in range(0, len(wavs), 16)
+                                for f in enc.frames(wavs[i:i + 16], model.feat_layers, model.pca())]
+    feats = feats_by_layers[key]
     errors, errors_lm, hyps = 0, 0, []
     with torch.no_grad():
         for f, ref in zip(feats, refs):

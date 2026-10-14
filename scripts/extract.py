@@ -5,6 +5,7 @@
 用法：python scripts/extract.py --dataset wordshk --out data/feats/wordshk [--max-hours 20] [--layers 4,8,12,0]
 
 --layers：存 encoder 邊幾層（0 = 原本 512 維；1–11 = audio_tower 各層 1024 維；12 = 最後輸出 1536 維）。
+--pca：scripts/fit_pca.py 整嘅檔案，入面有嘅層會壓縮做 k 維；--fp8：用 float8 存（再細一半）。
 """
 
 import sys
@@ -21,7 +22,7 @@ import torch
 from tqdm import tqdm
 
 from g2asr.data import DATASETS, decode_audio, iter_rows
-from g2asr.encoder import SAMPLE_RATE, Encoder
+from g2asr.encoder import SAMPLE_RATE, Encoder, layer_dim
 from g2asr.text import units
 
 parser = argparse.ArgumentParser()
@@ -33,8 +34,14 @@ parser.add_argument("--batch", type=int, default=32)
 parser.add_argument("--shard-size", type=int, default=4000)
 parser.add_argument("--workers", type=int, default=8, help="解碼音頻嘅線程數")
 parser.add_argument("--layers", default="0", help="存邊幾層 feature（逗號分隔，按次序駁埋）")
+parser.add_argument("--pca", help="PCA 檔（fit_pca.py），壓縮入面有嘅層")
+parser.add_argument("--fp8", action="store_true", help="feature 用 float8_e4m3fn 存")
 args = parser.parse_args()
 layers = [int(x) for x in args.layers.split(",")]
+pca = torch.load(args.pca)["pca"] if args.pca else None
+dims = [pca[l][1].shape[1] if pca and l in pca else layer_dim(l) for l in layers]
+meta = {"layers": layers, "dims": dims, "pca": args.pca, "fp8": args.fp8}
+STORE = torch.float8_e4m3fn if args.fp8 else torch.float16
 
 repo, split, text_col = DATASETS[args.dataset]
 out = Path(args.out)
@@ -45,13 +52,13 @@ done, skip = state["shards"], state["rows"]
 
 ds = iter_rows(repo, split, ["audio", text_col], skip=skip)  # 已做嘅行直接跳過，唔使重新落載
 enc = Encoder()
-shard = {"feats": [], "units": [], "text": [], "layers": layers}
+shard = {"feats": [], "units": [], "text": [], **meta}
 pending, hours, n_seen, n_skipped = [], 0.0, skip, 0
 total_hours = state["hours"]
 
 
 def flush_batch():
-    feats = enc.frames([w for w, _, _ in pending], layers)
+    feats = [f.to(STORE) for f in enc.frames([w for w, _, _ in pending], layers, pca)]
     for f, (_, us, text) in zip(feats, pending):
         shard["feats"].append(f)
         shard["units"].append(us)
@@ -65,7 +72,7 @@ def flush_shard():
         torch.save(shard, out / f"shard_{done:04d}.pt")
         done += 1
         progress.write_text(json.dumps({"shards": done, "rows": n_seen, "hours": total_hours + hours}))
-    shard = {"feats": [], "units": [], "text": [], "layers": layers}
+    shard = {"feats": [], "units": [], "text": [], **meta}
 
 
 def prepare(row):

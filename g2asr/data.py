@@ -113,7 +113,7 @@ def batches(paths: list[Path], unit_to_id: dict[str, int], max_frames: int, shuf
             lengths = torch.tensor([len(f) for f, _, _ in group])
             feats = torch.zeros(len(group), lengths.max(), group[0][0].shape[1], dtype=torch.float16)
             for i, (f, _, _) in enumerate(group):
-                feats[i, :len(f)] = f
+                feats[i, :len(f)] = f.to(torch.float16)  # 可能係 fp8
             targets = torch.tensor([u for _, us, _ in group for u in us])
             target_lengths = torch.tensor([len(us) for _, us, _ in group])
             yield feats, lengths, targets, target_lengths, [t for _, _, t in group]

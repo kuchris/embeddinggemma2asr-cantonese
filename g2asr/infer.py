@@ -31,7 +31,7 @@ def transcribe_batch(enc: Encoder, model: Reader, units: list[str], wavs: list[n
     out: list[list[str]] = [[] for _ in wavs]
     for start in range(0, len(order), batch):
         idx = order[start:start + batch]
-        feats = enc.frames([wavs[i] for i in idx], model.feat_layers)
+        feats = enc.frames([wavs[i] for i in idx], model.feat_layers, model.pca())
         lengths = torch.tensor([len(f) for f in feats]).cuda()
         x = pad_sequence(feats, batch_first=True).cuda().float()
         with torch.autocast("cuda", dtype=torch.bfloat16):
@@ -54,7 +54,7 @@ def transcribe_nbest(enc: Encoder, model: Reader, units: list[str], wavs: list[n
     out: list[list[tuple[list[str], float]]] = [[] for _ in wavs]
     for start in range(0, len(order), batch):
         idx = order[start:start + batch]
-        feats = enc.frames([wavs[i] for i in idx], model.feat_layers)
+        feats = enc.frames([wavs[i] for i in idx], model.feat_layers, model.pca())
         lengths = torch.tensor([len(f) for f in feats]).cuda()
         x = pad_sequence(feats, batch_first=True).cuda().float()
         with torch.autocast("cuda", dtype=torch.bfloat16):

@@ -74,7 +74,11 @@ for d in args.feat_dirs:
     val_paths.append(paths[-1])
 
 use_layers = [int(x) for x in args.use_layers.split(",")] if args.use_layers else None
-feat_layers = use_layers or torch.load(train_paths[0], mmap=True).get("layers", [0])
+meta = torch.load(train_paths[0], mmap=True)
+feat_layers = use_layers or meta.get("layers", [0])
+pca = torch.load(meta["pca"])["pca"] if meta.get("pca") else {}  # 抽 feature 時用嘅 PCA，要跟 checkpoint 一齊存
+pca = {l: v for l, v in pca.items() if l in feat_layers}
+del meta
 jy_vocab = {} if args.jy_weight > 0 else None
 if args.stream and (args.use_layers or jy_vocab is not None):
     raise SystemExit("--stream 唔支援 --use-layers／--jy-weight")
@@ -92,7 +96,10 @@ else:
 
 model = Reader(vocab["emb"], d_model=args.d_model, layers=args.layers, heads=args.heads, dropout=args.dropout,
                head=args.head, feat_layers=feat_layers, jy_classes=len(jy_vocab) if jy_vocab else 0,
-               jy_layer=args.jy_layer).to(device)
+               jy_layer=args.jy_layer, pca_dims={l: c.shape[1] for l, (_, c) in pca.items()}).to(device)
+for l, (mean, comps) in pca.items():
+    getattr(model, f"pca_mean_{l}").copy_(mean)
+    getattr(model, f"pca_comps_{l}").copy_(comps)
 print(f"reader 參數：{sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6:.1f}M，"
       f"字典 {len(vocab['units'])}，head={args.head}，feature 層 {list(feat_layers)}，"
       f"粵拼比重 {args.jy_weight}（第 {args.jy_layer} 層），train shard {len(train_paths)}，val shard {len(val_paths)}")

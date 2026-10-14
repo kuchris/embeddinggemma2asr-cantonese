@@ -47,12 +47,13 @@ class Encoder:
     # ---------- 逐格 feature（reader 嘅輸入） ----------
 
     @torch.inference_mode()
-    def frames(self, wavs: list[np.ndarray], layers=(0,)) -> list[torch.Tensor]:
+    def frames(self, wavs: list[np.ndarray], layers=(0,), pca: dict | None = None) -> list[torch.Tensor]:
         """每段 16kHz mono 音頻 → (T, D) 逐格 feature（已去 padding，放喺 CPU，fp16）。
 
         layers：要邊幾層，按次序駁埋。0 = embed_audio 之後嘅 512 維（原本用開嗰種）；
         1–11 = audio_tower 第幾層 conformer 嘅輸出（1024 維）；12 = 最後一層經 output_proj（1536 維）。
         （hidden_states 有 13 個：[0] 係入第 1 層之前，[1]–[11] 係第 1–11 層，[12] = last_hidden_state。）
+        pca：{層: (mean (D,), comps (D, k))}，有就將嗰層壓縮做 k 維（(x − mean) @ comps）。
         """
         layers = tuple(layers)
         fe = self.processor.feature_extractor(
@@ -62,7 +63,14 @@ class Encoder:
             fe["input_features_mask"].to(self.device), return_dict=True,
             output_hidden_states=any(l > 0 for l in layers))
         hs = out.hidden_states
-        feats = torch.cat([out.pooler_output if l == 0 else hs[l] for l in layers], -1)
+        parts = []
+        for l in layers:
+            x = out.pooler_output if l == 0 else hs[l]
+            if pca and l in pca:
+                mean, comps = pca[l]
+                x = (x.float() - mean.to(x.device)) @ comps.to(x.device)
+            parts.append(x.float())
+        feats = torch.cat(parts, -1)
         return [f[m].to("cpu", torch.float16) for f, m in zip(feats, out.attention_mask)]
 
     # ---------- 768 維 embedding（同 sentence-transformers 一樣：mean pooling + normalize） ----------

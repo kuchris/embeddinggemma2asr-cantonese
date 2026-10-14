@@ -9,6 +9,7 @@ head 模式：
 feat_layers：輸入用 encoder 邊幾層（見 Encoder.frames）。多過一層就每層各自 LayerNorm + 投射，
 再用一組可以學嘅權重（softmax）加埋（SUPERB 式 weighted layer sum）。
 jy_classes > 0：喺第 jy_layer 層後面加一個粵拼 CTC head（輔助訓練，推理唔使用）。
+pca_dims：{層: k}，嗰層用 PCA 壓縮做 k 維；PCA 參數係固定 buffer，跟 checkpoint 一齊存，推理時交畀 Encoder.frames。
 """
 
 import math
@@ -25,12 +26,16 @@ EMB_DIM = 768
 class Reader(nn.Module):
     def __init__(self, vocab_emb: torch.Tensor, d_model: int = 384, layers: int = 6, heads: int = 6,
                  dropout: float = 0.1, head: str = "frozen", feat_layers=(0,), jy_classes: int = 0,
-                 jy_layer: int = 3):
+                 jy_layer: int = 3, pca_dims: dict | None = None):
         super().__init__()
         self.feat_layers = tuple(feat_layers)
         self.config = dict(d_model=d_model, layers=layers, heads=heads, dropout=dropout, head=head,
-                           feat_layers=self.feat_layers, jy_classes=jy_classes, jy_layer=jy_layer)
-        self.in_dims = [layer_dim(l) for l in self.feat_layers]
+                           feat_layers=self.feat_layers, jy_classes=jy_classes, jy_layer=jy_layer, pca_dims=pca_dims)
+        self.pca_dims = {int(l): k for l, k in (pca_dims or {}).items()}
+        for l, k in self.pca_dims.items():
+            self.register_buffer(f"pca_mean_{l}", torch.zeros(layer_dim(l)))
+            self.register_buffer(f"pca_comps_{l}", torch.zeros(layer_dim(l), k))
+        self.in_dims = [self.pca_dims.get(l, layer_dim(l)) for l in self.feat_layers]
         if len(self.in_dims) == 1:  # 同舊 checkpoint 一樣嘅結構
             self.inp = nn.Sequential(nn.LayerNorm(self.in_dims[0]), nn.Linear(self.in_dims[0], d_model))
         else:
@@ -57,6 +62,10 @@ class Reader(nn.Module):
             raise ValueError(head)
         self.blank = nn.Parameter(torch.randn(EMB_DIM) * 0.02)
         self.log_scale = nn.Parameter(torch.tensor(math.log(20.0)))
+
+    def pca(self) -> dict | None:
+        """畀 Encoder.frames 用：{層: (mean, comps)}。"""
+        return {l: (getattr(self, f"pca_mean_{l}"), getattr(self, f"pca_comps_{l}")) for l in self.pca_dims} or None
 
     def mix_weights(self) -> list[float]:
         return self.mix_logits.softmax(0).tolist() if len(self.in_dims) > 1 else [1.0]
