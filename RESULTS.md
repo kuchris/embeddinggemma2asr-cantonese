@@ -57,6 +57,10 @@ Train 時間：約 1 小時 30 分（每步約 0.24 秒前半，後半同時做�
 **tuned**（用 text embedding 做起點，一齊 train）：最好驗證 14.54%；test greedy 15.16%、+LM 12.70%（α=0.7 β=4.0，dev 揀）；
 LibriSpeech WER **59.1%**（三個入面最差）—— 介乎兩者之間，而且將 frozen 嘅泛化優勢 train 走咗。
 
+**learned 大 reader**（d_model 512、8 層、8 heads，reader 約 26M，連字典 33.3M；每步約 0.8s，約 2.5 小時）：
+最好驗證 14.09%；test greedy 14.97%、+LM **12.42%**（α=0.7 β=4.0）；LibriSpeech WER 57.9%。
+同細 reader（14.90% ／ 12.59%）差唔多 —— **瓶頸唔係 reader 大細**，係凍結 encoder 嘅 feature 同數據。
+
 **結論**：喺同類數據（粵語），**固定用 EmbeddingGemma 文字空間冇幫助**，普通分類頭仲準少少、學得快好多。
 frozen 唯一嘅優勢係對冇 train 過嘅語言泛化好少少（英文 WER 54.8% vs 57.9%），差距唔大。
 
