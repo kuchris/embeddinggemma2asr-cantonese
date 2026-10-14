@@ -5,6 +5,7 @@
 set -u
 cd "$(dirname "$0")/.."
 export PYTHONIOENCODING=utf-8
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 FEATS="data/feats/daily data/feats/mixed data/feats/wordshk data/feats/mdcc $(ls -d data/feats/radio_* | xargs)"
 OLD="data/feats/daily data/feats/mixed data/feats/wordshk"
 LOG=runs/round4
@@ -17,17 +18,17 @@ for p in "165805 VF19A_Cantonese_I2_20181114.TextGrid" "165798 VF19A_Cantonese_I
          "165810 VM19A_Cantonese_I2_20191031.TextGrid" "165808 VM19A_Cantonese_I2_20191031.wav"; do
   set -- $p; [ -f "data/spice/$2" ] || curl -sL -o "data/spice/$2" "https://borealisdata.ca/api/access/datafile/$1"
 done
-python scripts/spice_eval.py --prepare > "$LOG/spice_prepare.log" 2>&1
+[ -d data/spice/prepared/VM19A/vad ] || python scripts/spice_eval.py --prepare > "$LOG/spice_prepare.log" 2>&1
 step "SpiCE 準備好"
 
-python scripts/build_vocab.py $FEATS --out data/vocab_r4.pt --min-count 2 > "$LOG/vocab.log" 2>&1 || { step "字典失敗"; exit 1; }
-step "$(grep 字典 "$LOG/vocab.log")"
-python scripts/build_lm.py $FEATS --out data/lm_r4.pkl --order 4 > "$LOG/lm.log" 2>&1 || { step "LM 失敗"; exit 1; }
+[ -f data/vocab_r4.pt ] || python scripts/build_vocab.py $FEATS --out data/vocab_r4.pt --min-count 2 > "$LOG/vocab.log" 2>&1 || { step "字典失敗"; exit 1; }
+step "字典：$(grep 字典 "$LOG/vocab.log")"
+[ -f data/lm_r4.pkl ] || python scripts/build_lm.py $FEATS --out data/lm_r4.pkl --order 4 > "$LOG/lm.log" 2>&1 || { step "LM 失敗"; exit 1; }
 step "$(grep 已存 "$LOG/lm.log")"
 
 step "train learned_r4"
 python scripts/train.py $FEATS --vocab data/vocab_r4.pt --out runs/learned_r4 --head learned \
-  --epochs ${EPOCHS:-12} --max-frames ${MAX_FRAMES:-120000} --eval-every 1000 \
+  --epochs ${EPOCHS:-12} --max-frames ${MAX_FRAMES:-60000} --eval-every 1000 \
   > "$LOG/train.log" 2>&1 || { step "train 失敗"; tail -20 "$LOG/train.log" >> "$LOG/pipeline.log"; exit 1; }
 step "train 完成：$(grep 完成 "$LOG/train.log")"
 
