@@ -34,8 +34,8 @@ uv sync --extra train      # train（多咗 ToJyutping）
 轉錄（model 資料夾 = `scripts/export_hf.py` 出嘅 `model.safetensors` + `config.json`，或者 train 出嚟嘅 `.pt`）：
 
 ```bash
-uv run python scripts/transcribe.py hf/gemma2asr-cantonese samples/*.wav
-uv run --with sounddevice python scripts/live.py --ckpt hf/gemma2asr-cantonese
+uv run python scripts/transcribe.py hf/embeddinggemma2asr-cantonese samples/*.wav
+uv run --with sounddevice python scripts/live.py --ckpt hf/embeddinggemma2asr-cantonese
 ```
 
 ```python
@@ -44,7 +44,7 @@ from g2asr.infer import load_reader, transcribe_batch
 from g2asr.text import join_units
 
 enc = Encoder()
-model, units = load_reader("hf/gemma2asr-cantonese")
+model, units = load_reader("hf/embeddinggemma2asr-cantonese")
 print(join_units(transcribe_batch(enc, model, units, [wav_16k])[0]))
 ```
 
@@ -55,7 +55,7 @@ python scripts/extract.py --dataset mdcc --out data/feats/mdcc_l4 --max-hours 30
 python scripts/fit_pca.py data/feats/mdcc_l4 --layers 6,9,12,0 --k 256 --out data/pca_6_9_12_0.pt
 python scripts/extract.py --dataset mdcc --out data/feats6/mdcc --layers 6,9,12,0 --pca data/pca_6_9_12_0.pt --fp8
 python scripts/train.py data/feats6/* --vocab data/vocab_r4.pt --out runs/learned_r6 --head learned --jy-weight 0.3
-python scripts/export_hf.py runs/learned_r6/best.pt --out hf/gemma2asr-cantonese
+python scripts/export_hf.py runs/learned_r6/best.pt --out hf/embeddinggemma2asr-cantonese
 ```
 
 數據大過 RAM：`train.py --mmap`（分組讀 + 預讀；但 Colab 磁碟慢，會慢 2–3 倍）。
