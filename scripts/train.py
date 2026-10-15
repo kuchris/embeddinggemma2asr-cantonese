@@ -48,6 +48,8 @@ parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--warmup", type=int, default=500)
 parser.add_argument("--eval-every", type=int, default=500)
 parser.add_argument("--resume", action="store_true")
+parser.add_argument("--mmap", action="store_true",
+                    help="train 數據唔載入 RAM，由硬碟 mmap 讀（數據大過 RAM 先用）")
 parser.add_argument("--stream", action="store_true",
                     help="唔預先載入 RAM，逐個 shard 由硬碟讀（RAM 唔夠先用；慢好多）")
 parser.add_argument("--max-steps", type=int, default=0, help="行咗幾多步就停（測試用，0 = 唔限）")
@@ -88,7 +90,7 @@ if args.stream:
     steps_per_epoch = sum(1 for _ in batches(train_paths, unit_to_id, args.max_frames, shuffle=False))
 else:
     t_load = time.time()
-    data = Preloaded(train_paths, unit_to_id, use_layers, jy_vocab)
+    data = Preloaded(train_paths, unit_to_id, use_layers, jy_vocab, mmap=args.mmap)
     val_data = Preloaded(val_paths, unit_to_id, use_layers)
     steps_per_epoch = len(data.batches(args.max_frames, shuffle=False))
     print(f"預先載入 {len(data.items)} 句、{data.frames / 25 / 3600:.0f} 小時，用咗 {time.time() - t_load:.0f}s"

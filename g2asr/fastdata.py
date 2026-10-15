@@ -14,20 +14,24 @@ from .encoder import layer_dim
 
 class Preloaded:
     """use_layers：shard 入面有多層 feature（shard["layers"]）嗰陣揀用邊幾層，只載入嗰幾層慳 RAM。
-    jy_vocab：畀咗就順便整粵拼標籤（輔助 CTC），新音節會加入呢個 dict（grow=False 就略過）。"""
+    jy_vocab：畀咗就順便整粵拼標籤（輔助 CTC），新音節會加入呢個 dict（grow=False 就略過）。
+    mmap：唔載入 RAM，用 torch.load(mmap=True) 由硬碟讀（數據大過 RAM 嗰陣用，靠 OS page cache）。"""
 
     def __init__(self, paths, unit_to_id: dict[str, int], use_layers=None, jy_vocab: dict | None = None,
-                 grow: bool = True):
+                 grow: bool = True, mmap: bool = False):
         self.shards: list[torch.Tensor] = []  # 每個 shard 一大塊連續 (總格數, D) fp16
+        self.mmap = mmap
+        self.item_feats: list[torch.Tensor] = []  # mmap 模式：每句自己嘅 feature（仲喺硬碟）
+        self.cols = None
         self.items: list[tuple] = []  # (shard, 開始格, 格數, 字 id, 粵拼 id 或 None)
         self.jy = jy_vocab is not None
         if self.jy:
             from .jyutping import jyutping_units  # 要裝 ToJyutping（uv sync --extra train）
         for path in paths:
-            shard = torch.load(path)
+            shard = torch.load(path, mmap=mmap)
             have = shard.get("layers", [0])
             self.dims = shard.get("dims") or [layer_dim(l) for l in have]
-            cols = self._columns(have, self.dims, use_layers)
+            cols = self.cols = self._columns(have, self.dims, use_layers)
             offset, keep = 0, []
             for f, us in zip(shard["feats"], shard["units"]):
                 ids = [unit_to_id[u] for u in us if u in unit_to_id]
@@ -41,12 +45,19 @@ class Preloaded:
                             jy.append(jy_vocab[j])
                     jy = torch.tensor(jy, dtype=torch.int32)
                 if ids and len(f) >= 2 * len(ids):  # CTC 要夠格數
-                    keep.append(f if cols is None else f[:, cols])
+                    if mmap:
+                        self.item_feats.append(f)  # 揀欄留返 collate 先做，唔係會讀晒入 RAM
+                    else:
+                        keep.append(f if cols is None else f[:, cols])
                     self.items.append((len(self.shards), offset, len(f), torch.tensor(ids, dtype=torch.int32), jy))
                     offset += len(f)
-            self.shards.append(torch.cat(keep) if keep else torch.empty(0, 512, dtype=torch.float16))
+            if not mmap:
+                self.shards.append(torch.cat(keep) if keep else torch.empty(0, 512, dtype=torch.float16))
+            else:
+                self.shards.append(torch.empty(0))  # 佔位，令 items 嘅 shard 編號一致
             del shard, keep
-        self.frames = sum(s.shape[0] for s in self.shards)
+        self.frames = sum(it[2] for it in self.items)
+        self.dim = (len(self.cols) if self.cols is not None else sum(self.dims)) if mmap else self.shards[0].shape[1]
 
     @staticmethod
     def _columns(have: list[int], dims: list[int], want):
@@ -79,10 +90,14 @@ class Preloaded:
 
     def collate(self, group: list[int]):
         lengths = torch.tensor([self.items[i][2] for i in group])
-        feats = torch.zeros(len(group), int(lengths.max()), self.shards[0].shape[1], dtype=torch.float16)
+        feats = torch.zeros(len(group), int(lengths.max()), self.dim, dtype=torch.float16)
         for row, i in enumerate(group):
             s, off, n = self.items[i][:3]
-            feats[row, :n] = self.shards[s][off:off + n].to(torch.float16)  # 可能係 fp8
+            if self.mmap:
+                f = self.item_feats[i]
+                feats[row, :n] = (f if self.cols is None else f[:, self.cols]).to(torch.float16)
+            else:
+                feats[row, :n] = self.shards[s][off:off + n].to(torch.float16)  # 可能係 fp8
         targets = torch.cat([self.items[i][3] for i in group]).long()
         target_lengths = torch.tensor([len(self.items[i][3]) for i in group])
         if not self.jy:
