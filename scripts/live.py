@@ -40,16 +40,19 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--ckpt", default=str(ROOT / "runs" / "learned_r6b" / "best.pt"))
 parser.add_argument("--lm", action="store_true", help="用 beam search + LM（準啲，慢少少）")
 parser.add_argument("--lm-path", default=str(ROOT / "data" / "lm_r4.pkl"))
-parser.add_argument("--silence", type=int, default=500, help="停頓幾多毫秒當一句完")
+parser.add_argument("--silence", type=int, help="停頓幾多毫秒當一句完（預設：咪 500、--loopback 300）")
 parser.add_argument("--file", help="用錄音檔模擬咪（測試用）")
 parser.add_argument("--loopback", action="store_true", help="唔用咪，轉錄電腦喇叭播緊嘅聲")
-parser.add_argument("--partial", type=float, default=0.5, help="講緊嘢嘅時候每幾多秒更新一次（0 = 一句完先出字）")
+parser.add_argument("--partial", type=float, help="講緊嘢嘅時候每幾多秒更新一次，0 = 一句完先出字（預設：咪 0.5、--loopback 0.25）")
 parser.add_argument("--vad", type=float, help="VAD 門檻，越低越易當係講嘢（預設：咪 0.5、--loopback 0.3）")
 parser.add_argument("--plain", action="store_true", help="淨係出字：唔顯示時間，一句接一句連續寫落去")
 args = parser.parse_args()
 max_sec = LOOPBACK_MAX_SEC if args.loopback else MAX_SEC
 vad_threshold = args.vad if args.vad is not None else 0.3 if args.loopback else 0.5  # 片段成日有背景音樂
-partial_every = 0 if args.file else round(args.partial * SAMPLE_RATE / BLOCK)  # 幾多格更新一次
+# 片段講得快、少停頓：loopback 更新密啲、停短啲就當一句完
+silence_ms = args.silence if args.silence is not None else 300 if args.loopback else 500
+partial_sec = args.partial if args.partial is not None else 0.25 if args.loopback else 0.5
+partial_every = 0 if args.file else round(partial_sec * SAMPLE_RATE / BLOCK)  # 幾多格更新一次
 
 print("載入模型…")
 enc = Encoder()
@@ -57,7 +60,7 @@ model, vocab = load_reader(args.ckpt)
 lm = NGramLM.load(args.lm_path) if args.lm else None
 transcribe_batch(enc, model, vocab, [np.zeros(SAMPLE_RATE, np.float32)], lm)  # 預熱
 vad = VADIterator(load_silero_vad(), threshold=vad_threshold, sampling_rate=SAMPLE_RATE,
-                  min_silence_duration_ms=args.silence, speech_pad_ms=100)
+                  min_silence_duration_ms=silence_ms, speech_pad_ms=100)
 
 blocks: queue.Queue = queue.Queue()
 
