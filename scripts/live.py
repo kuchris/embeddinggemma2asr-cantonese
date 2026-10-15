@@ -3,6 +3,7 @@
 用法：uv run --with sounddevice python scripts/live.py [--lm] [--ckpt runs/learned_r6b/best.pt]
       --file x.wav 可以用錄音檔模擬（測試用）
       --loopback 轉錄電腦播緊嘅聲（預設喇叭，Windows WASAPI），要用 uv run --with soundcard
+      --plain 淨係出字（冇時間、唔分行），--vad 0.3 調低 VAD 門檻
 """
 
 import sys
@@ -42,8 +43,11 @@ parser.add_argument("--silence", type=int, default=500, help="停頓幾多毫秒
 parser.add_argument("--file", help="用錄音檔模擬咪（測試用）")
 parser.add_argument("--loopback", action="store_true", help="唔用咪，轉錄電腦喇叭播緊嘅聲")
 parser.add_argument("--partial", type=float, default=0.5, help="講緊嘢嘅時候每幾多秒更新一次（0 = 一句完先出字）")
+parser.add_argument("--vad", type=float, help="VAD 門檻，越低越易當係講嘢（預設：咪 0.5、--loopback 0.3）")
+parser.add_argument("--plain", action="store_true", help="淨係出字：唔顯示時間，一句接一句連續寫落去")
 args = parser.parse_args()
 max_sec = LOOPBACK_MAX_SEC if args.loopback else MAX_SEC
+vad_threshold = args.vad if args.vad is not None else 0.3 if args.loopback else 0.5  # 片段成日有背景音樂
 partial_every = 0 if args.file else round(args.partial * SAMPLE_RATE / BLOCK)  # 幾多格更新一次
 
 print("載入模型…")
@@ -51,7 +55,7 @@ enc = Encoder()
 model, vocab = load_reader(args.ckpt)
 lm = NGramLM.load(args.lm_path) if args.lm else None
 transcribe_batch(enc, model, vocab, [np.zeros(SAMPLE_RATE, np.float32)], lm)  # 預熱
-vad = VADIterator(load_silero_vad(), threshold=0.5, sampling_rate=SAMPLE_RATE,
+vad = VADIterator(load_silero_vad(), threshold=vad_threshold, sampling_rate=SAMPLE_RATE,
                   min_silence_duration_ms=args.silence, speech_pad_ms=100)
 
 blocks: queue.Queue = queue.Queue()
@@ -61,20 +65,42 @@ def width(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
 
 
+def tail(text: str, room: int) -> str:
+    """太長就淨係留最尾：換咗行就覆蓋唔到。"""
+    while width(text) > room:
+        text = text[1:]
+    return text
+
+
+line = ""  # --plain：而家呢行已經定咗嘅字（自己換行，先可以喺行尾即時更新）
+
+
 def show_partial(audio: np.ndarray):
     """講緊嘢：greedy 轉錄到而家為止嘅部分，覆蓋同一行。"""
     text = join_units(transcribe_batch(enc, model, vocab, [audio])[0])
-    room = shutil.get_terminal_size().columns - 6
-    while width(text) > room:  # 太長就淨係顯示最尾，換咗行就覆蓋唔到
-        text = text[1:]
-    print(f"\r\033[K  … {text}", end="", flush=True)
+    room = shutil.get_terminal_size().columns - 1
+    shown = tail(line + text, room) if args.plain else f"  … {tail(text, room - 4)}"
+    print(f"\r\033[K{shown}", end="", flush=True)
 
 
 def emit(audio: np.ndarray):
+    global line
     t0 = time.time()
     text = join_units(transcribe_batch(enc, model, vocab, [audio], lm)[0])
     print("\r\033[K", end="")  # 清走即時更新嗰行
-    if text:
+    if args.plain:
+        line += f"{text} " if text else ""
+        room = shutil.get_terminal_size().columns - 1
+        while width(line) > room:  # 滿咗一行就定落嚟，剩低嘅留喺新一行
+            full = ""
+            for c in line:
+                if width(full + c) > room:
+                    break
+                full += c
+            print(full)
+            line = line[len(full):]
+        print(line, end="", flush=True)
+    elif text:
         print(f"[{len(audio) / SAMPLE_RATE:4.1f}s 句｜{(time.time() - t0) * 1000:3.0f}ms] {text}")
 
 
@@ -89,10 +115,14 @@ def run(source):
                 speech = list(recent)
         else:
             speech.append(block)
-            if (event and "end" in event) or len(speech) * BLOCK >= max_sec * SAMPLE_RATE:
+            if event and "end" in event:
                 emit(np.concatenate(speech))
                 speech = None
                 recent.clear()
+            elif len(speech) * BLOCK >= max_sec * SAMPLE_RATE:
+                # 夠長就先出字；VAD 仲當係講緊嘢（唔會再有 start），所以即刻開始錄下一段，唔係會漏字
+                emit(np.concatenate(speech))
+                speech = []
             elif partial_every and len(speech) % partial_every == 0 and blocks.qsize() < partial_every:
                 show_partial(np.concatenate(speech))  # 追唔切（隊列積壓）就跳過今次
     if speech:
