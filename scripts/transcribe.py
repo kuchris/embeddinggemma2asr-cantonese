@@ -1,6 +1,6 @@
 """用 train 好嘅 reader 轉錄音頻檔。
 
-用法：python scripts/transcribe.py runs/learned_r3/best.pt audio.wav [--lm data/lm_r3.pkl --alpha 0.7 --beta 5.0]
+用法：python scripts/transcribe.py runs/learned_r3/best.pt audio.wav [--lm data/lm_r3.pkl --alpha 0.3 --beta 2.5]
       長過 20 秒嘅音頻會先用 VAD 切出有人講嘢嘅段落（--no-vad 就照舊每 30 秒硬切）
 """
 
@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("ckpt")
 parser.add_argument("audio", nargs="+")
 parser.add_argument("--lm", help="n-gram LM（build_lm.py 整）；唔畀就用 greedy")
-parser.add_argument("--alpha", type=float, default=0.7)
-parser.add_argument("--beta", type=float, default=5.0)
+parser.add_argument("--alpha", type=float, default=0.3)
+parser.add_argument("--beta", type=float, default=2.5)
 parser.add_argument("--no-vad", action="store_true", help="長音頻唔用 VAD，每 30 秒硬切")
 args = parser.parse_args()
 

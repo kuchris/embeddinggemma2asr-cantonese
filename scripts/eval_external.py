@@ -33,7 +33,9 @@ parser.add_argument("--split", default="test")
 parser.add_argument("--text-col", default="text")
 parser.add_argument("--n", type=int, default=200)
 parser.add_argument("--show", type=int, default=4)
-parser.add_argument("--lm", help="加 beam search + LM（α=0.7 β=4.5）")
+parser.add_argument("--lm", help="加 beam search + LM")
+parser.add_argument("--alpha", type=float, default=0.3)
+parser.add_argument("--beta", type=float, default=2.5)
 parser.add_argument("--export", help="將用到嘅音頻存做 wav + refs.json（畀其他 ASR 比較）")
 args = parser.parse_args()
 
@@ -80,7 +82,7 @@ for path in args.ckpts:
             errors += edit_distance(hyp, ref)
             hyps.append(hyp)
             if lm:
-                ids = beam_search(lp[0].float().cpu().numpy(), ck["units"], lm, alpha=0.7, beta=4.5)
+                ids = beam_search(lp[0].float().cpu().numpy(), ck["units"], lm, alpha=args.alpha, beta=args.beta)
                 errors_lm += edit_distance([ck["units"][i] for i in ids], ref)
     oov = sum(u not in vocab for r in refs for u in r) / total
     print(f"\n{path}（head={ck['config']['head']}，字典 {len(vocab)}，參考字唔喺字典 {oov:.1%}）：錯誤率 {errors / total:.1%}"

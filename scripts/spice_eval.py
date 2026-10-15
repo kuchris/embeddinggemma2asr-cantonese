@@ -41,6 +41,8 @@ parser.add_argument("ckpts", nargs="*")
 parser.add_argument("--lm")
 parser.add_argument("--prepare", action="store_true")
 parser.add_argument("--vad-threshold", type=float, default=0.5)
+parser.add_argument("--alpha", type=float, default=0.3)
+parser.add_argument("--beta", type=float, default=2.5)
 args = parser.parse_args()
 
 
@@ -97,7 +99,7 @@ def decode(model, ck, wavs):
                 lp = model(f[None].cuda().float(), lengths)
             g_out.append([ck["units"][j] for j in Reader.greedy(lp, lengths)[0]])
             if lm:
-                l_out.append([ck["units"][j] for j in beam_search(lp[0].float().cpu().numpy(), ck["units"], lm, 0.7, 4.5)])
+                l_out.append([ck["units"][j] for j in beam_search(lp[0].float().cpu().numpy(), ck["units"], lm, args.alpha, args.beta)])
     return g_out, l_out
 
 

@@ -1,6 +1,7 @@
 """快速推理：按長度排序、encoder 同 reader 都成批行、bf16。
 
 逐句行 reader 同埋長短句混埋做 batch（好多 padding）會慢兩三倍。
+LM 預設 α=0.3 β=2.5 係為 learned_r6b 揀（scripts/lm_sweep.py）；舊 checkpoint（r4 或之前）用 α=0.7 β=4.5。
 """
 
 import json
@@ -35,7 +36,7 @@ def load_reader(ckpt_path: str) -> tuple[Reader, list[str]]:
 
 @torch.inference_mode()
 def transcribe_batch(enc: Encoder, model: Reader, units: list[str], wavs: list[np.ndarray],
-                     lm: NGramLM | None = None, alpha: float = 0.7, beta: float = 4.5,
+                     lm: NGramLM | None = None, alpha: float = 0.3, beta: float = 2.5,
                      batch: int = BATCH) -> list[list[str]]:
     """多段 16kHz 音頻 → 每段嘅單位（次序同輸入一樣）。"""
     order = sorted(range(len(wavs)), key=lambda i: len(wavs[i]))
@@ -58,7 +59,7 @@ def transcribe_batch(enc: Encoder, model: Reader, units: list[str], wavs: list[n
 
 @torch.inference_mode()
 def transcribe_nbest(enc: Encoder, model: Reader, units: list[str], wavs: list[np.ndarray], lm: NGramLM | None,
-                     alpha: float = 0.7, beta: float = 4.5, beam: int = 8,
+                     alpha: float = 0.3, beta: float = 2.5, beam: int = 8,
                      batch: int = BATCH) -> list[list[tuple[list[str], float]]]:
     """每段音頻 → beam 入面所有候選 [(單位, 分數)]，分數由高至低（俾外面嘅 LM 重新評分）。"""
     order = sorted(range(len(wavs)), key=lambda i: len(wavs[i]))

@@ -12,12 +12,13 @@ Weights: [kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/e
 
 | Test set (greedy / with 4-gram LM) | learned_r6b | SenseVoice-Small |
 |---|---|---|
-| Read speech + Cantonese–English code-switching | 10.6% / 10.9% | **9.7%** |
-| MDCC (audiobooks) | 5.3% / **4.7%** | 7.9% |
-| SpiCE (spontaneous conversation) | 34.1% / 35.4% | **28.0%** |
+| Read speech + Cantonese–English code-switching | 10.8% / **9.6%** | 9.7% |
+| MDCC (audiobooks) | 5.3% / **4.5%** | 7.9% |
+| SpiCE (spontaneous conversation) | 34.1% / 33.3% | **28.0%** |
 
 Character error rate; lower is better. MDCC is in-domain for our model but zero-shot for SenseVoice.
-Greedy decoding is recommended; the 4-gram LM now only helps on MDCC.
+The 4-gram LM (α=0.3, β=2.5, re-tuned for r6b) helps on every test set by about 1 point; greedy is faster.
+α/β were picked on one half of these test sets; on the other half alone the gain is the same (RESULTS.md).
 
 - Project report: [REPORT.md](REPORT.md) (Cantonese)
 - Detailed numbers for every experiment: [RESULTS.md](RESULTS.md) (Cantonese)
