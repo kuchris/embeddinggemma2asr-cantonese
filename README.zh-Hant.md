@@ -1,6 +1,6 @@
 # embeddinggemma2asr-cantonese
 
-[English](README.md) | **繁體中文**
+[English](README.md) | **繁體中文** | [日本語](README.ja.md)
 
 以**凍結**的 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) 音訊編碼器，加上一個小型 CTC 讀取器，
 實現快速的粵語語音辨識。靈感來自只支援英文的 [Embedding Gemma Transcribe](https://eg2.haku.sh/)。

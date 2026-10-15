@@ -1,6 +1,6 @@
 # embeddinggemma2asr-cantonese
 
-**English** | [繁體中文](README.zh-Hant.md)
+**English** | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md)
 
 Fast Cantonese speech recognition from the **frozen** audio encoder of
 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2), plus a small CTC reader.
