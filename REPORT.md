@@ -7,7 +7,7 @@
 凍結 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) 嘅 audio encoder，喺上面 train 一個
 2,080 萬參數嘅 CTC reader。最新版本（learned_r6b，1,238 小時數據）喺 RTX 5070 Ti 上約 **750–850 倍即時**，
 比 SenseVoice-Small 快約 3 倍；有聲書錯誤率 **4.7%**，低過 SenseVoice（7.9%）；但自然對話仍然輸（34% vs 28%）。
-權重：[kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese)（暫時 private）。
+權重：[kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese)。
 
 ## 動機
 

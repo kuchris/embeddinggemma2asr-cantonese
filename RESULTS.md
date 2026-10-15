@@ -422,6 +422,6 @@ Colab 磁碟每秒約 150–200MB，每步約 0.63 秒（預先載入約 0.24 �
 - 多 518 小時：驗證 −1.5 點、對話 −2.2 點——**數據仲係最有效**。
 - 4-gram LM 開始拖後腿（原本 test、SpiCE 加 LM 反而差）；只有 MDCC（LM 用 MDCC train 字幕整）仲有幫助。建議用 greedy。
 - 本機（RTX 5070 Ti）MDCC 2000 句 greedy 5.25%，約 750–850× 即時。
-- 已上載 Hugging Face（private）：`kuchris/embeddinggemma2asr-cantonese`。
+- 已上載 Hugging Face：`kuchris/embeddinggemma2asr-cantonese`。
 
 **成本**：第六輪（壓縮測試 + 重抽 1,238 小時 + r6 + r6b，包括兩次重開 r6b）約 51 units，餘額 98.2。

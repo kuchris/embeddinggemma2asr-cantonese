@@ -7,7 +7,7 @@
 
 **最新模型 learned_r6b**（2,080 萬參數，1,238 小時訓練資料）：在 RTX 5070 Ti 上約為**即時速度的 750 至 850 倍**，
 在同一張 GPU 上比 SenseVoice-Small 快約 3 倍。
-模型權重：[kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese)（目前未公開）。
+模型權重：[kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese)。
 
 | 測試集（貪婪解碼／加 4-gram 語言模型） | learned_r6b | SenseVoice-Small |
 |---|---|---|

@@ -8,7 +8,7 @@ Inspired by [Embedding Gemma Transcribe](https://eg2.haku.sh/), which does the s
 
 **Latest model, learned_r6b** (20.8M parameters, 1,238 hours of training data): roughly **750–850× real time** on an
 RTX 5070 Ti, about 3× faster than SenseVoice-Small on the same GPU.
-Weights: [kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese) (private for now).
+Weights: [kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese).
 
 | Test set (greedy / with 4-gram LM) | learned_r6b | SenseVoice-Small |
 |---|---|---|
