@@ -1,4 +1,4 @@
-# gemma2asr 報告：用凍結嘅 EmbeddingGemma 2 做廣東話語音辨識
+# embeddinggemma2asr-cantonese 報告：用凍結嘅 EmbeddingGemma 2 做廣東話語音辨識
 
 > 詳細數字同每次實驗設定見 [RESULTS.md](RESULTS.md)。呢份係總結。
 

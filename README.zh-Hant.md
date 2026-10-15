@@ -1,4 +1,4 @@
-# gemma2asr
+# embeddinggemma2asr-cantonese
 
 [English](README.md) | **繁體中文**
 
@@ -84,5 +84,9 @@ python scripts/export_hf.py runs/learned_r6b/best.pt --out hf/embeddinggemma2asr
 測試集：MDCC test 及 [SpiCE](https://spice-corpus.readthedocs.io/)（CC BY 4.0）。
 
 由於部分訓練資料限非商業用途或未註明授權，模型權重建議僅作研究及非商業用途。
+
+## 授權
+
+程式碼：[MIT](LICENSE)。模型權重：僅限研究及非商業用途（見上文）。
 
 所有模型快取均存放於 `models/`（可用 `G2ASR_MODELS` 更改）。

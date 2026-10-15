@@ -1,4 +1,4 @@
-# gemma2asr
+# embeddinggemma2asr-cantonese
 
 **English** | [繁體中文](README.zh-Hant.md)
 
@@ -88,5 +88,9 @@ Test sets: MDCC test and [SpiCE](https://spice-corpus.readthedocs.io/) (CC BY 4.
 
 Because some training data is non-commercial or has no stated license, the model weights are recommended for
 research and non-commercial use only.
+
+## License
+
+Code: [MIT](LICENSE). Model weights: research and non-commercial use only (see above).
 
 All model caches are stored under `models/` (override with `G2ASR_MODELS`).
