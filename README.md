@@ -48,6 +48,7 @@ training `.pt` checkpoint.
 ```bash
 uv run python scripts/transcribe.py hf/embeddinggemma2asr-cantonese samples/*.wav
 uv run --with sounddevice python scripts/live.py --ckpt hf/embeddinggemma2asr-cantonese
+uv run --with sounddevice --with soundcard python scripts/live.py --ckpt hf/embeddinggemma2asr-cantonese --loopback  # what the computer is playing (Windows)
 ```
 
 ```python
