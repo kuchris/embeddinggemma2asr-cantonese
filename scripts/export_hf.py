@@ -3,7 +3,7 @@
 剔走 optimizer 狀態同粵拼 head（淨係 train 用）；PCA 參數（4 層 feature 用）係 buffer，會跟住存。
 載入：g2asr.infer.load_reader("<資料夾>")
 
-用法：python scripts/export_hf.py runs/learned_r6/best.pt --out hf/gemma2asr-yue
+用法：python scripts/export_hf.py runs/learned_r6/best.pt --out hf/gemma2asr-cantonese
 """
 
 import sys
