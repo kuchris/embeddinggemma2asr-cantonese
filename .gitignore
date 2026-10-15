@@ -13,3 +13,4 @@ real/
 
 # 外部工具（llama.cpp 等）
 tools/
+hf/

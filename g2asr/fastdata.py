@@ -21,8 +21,11 @@ class Preloaded:
                  grow: bool = True, mmap: bool = False):
         self.shards: list[torch.Tensor] = []  # 每個 shard 一大塊連續 (總格數, D) fp16
         self.mmap = mmap
+        self.chunk_frames = 25_000_000  # mmap 模式每組約 2500 萬格（fp8 1024 維約 25GB，留位畀 page cache）
         self.item_feats: list[torch.Tensor] = []  # mmap 模式：每句自己嘅 feature（仲喺硬碟）
         self.cols = None
+        self.paths = list(paths)
+        self.chunk_plan: list[tuple[int, list[int]]] = []  # mmap：每組 (第一個 batch 位置, shard 編號)，畀 prefetch 預讀
         self.items: list[tuple] = []  # (shard, 開始格, 格數, 字 id, 粵拼 id 或 None)
         self.jy = jy_vocab is not None
         if self.jy:
@@ -74,19 +77,50 @@ class Preloaded:
         return torch.cat([torch.arange(starts[l], starts[l] + size[l]) for l in want])
 
     def batches(self, max_frames: int, shuffle: bool, seed: int = 0) -> list[list[int]]:
-        """全部句子按長度排序再切 batch（每批 padding 好少），再打亂 batch 次序。"""
-        order = sorted(range(len(self.items)), key=lambda i: self.items[i][2])
-        groups, cur = [], []
-        for i in order:
-            if cur and (len(cur) + 1) * self.items[i][2] > max_frames:
+        """全部句子按長度排序再切 batch（每批 padding 好少），再打亂 batch 次序。
+
+        mmap 模式：數據大過 RAM，全域隨機會令每個 batch 散落喺好多 shard，OS page cache 冇用（慢 3 倍）。
+        所以先將 shard 隨機分組（每組約 chunk_frames 格，裝得落 RAM），一組做完先到下一組，組內照樣按長度分 batch 再打亂。
+        """
+        rng = random.Random(seed)
+        if not self.mmap:
+            chunks = [range(len(self.items))]
+        else:
+            by_shard: dict[int, list[int]] = {}
+            for i, it in enumerate(self.items):
+                by_shard.setdefault(it[0], []).append(i)
+            shard_ids = list(by_shard)
+            if shuffle:
+                rng.shuffle(shard_ids)
+            chunks, chunk_shards, cur, cur_s, size = [], [], [], [], 0
+            for sid in shard_ids:
+                cur += by_shard[sid]
+                cur_s.append(sid)
+                size += sum(self.items[i][2] for i in by_shard[sid])
+                if size >= self.chunk_frames:
+                    chunks.append(cur)
+                    chunk_shards.append(cur_s)
+                    cur, cur_s, size = [], [], 0
+            if cur:
+                chunks.append(cur)
+                chunk_shards.append(cur_s)
+            self.chunk_plan = []
+        out = []
+        for k, chunk in enumerate(chunks):
+            if self.mmap:
+                self.chunk_plan.append((len(out), chunk_shards[k]))
+            groups, cur = [], []
+            for i in sorted(chunk, key=lambda i: self.items[i][2]):
+                if cur and (len(cur) + 1) * self.items[i][2] > max_frames:
+                    groups.append(cur)
+                    cur = []
+                cur.append(i)
+            if cur:
                 groups.append(cur)
-                cur = []
-            cur.append(i)
-        if cur:
-            groups.append(cur)
-        if shuffle:
-            random.Random(seed).shuffle(groups)
-        return groups
+            if shuffle:
+                rng.shuffle(groups)
+            out += groups
+        return out
 
     def collate(self, group: list[int]):
         lengths = torch.tensor([self.items[i][2] for i in group])
@@ -111,9 +145,25 @@ def prefetch(data: Preloaded, groups: list[list[int]], depth: int = 6):
     """背景線程砌 batch（同埋 pin memory），主線程 GPU 計緊上一批嗰陣下一批已經準備好。"""
     q: queue.Queue = queue.Queue(maxsize=depth)
 
+    # mmap：做緊第 k 組嗰陣，另一條線程順序讀第 k+1 組嘅 shard 檔入 page cache（比 mmap 隨機讀快好多）
+    plan = {start: sids for start, sids in data.chunk_plan} if data.mmap else {}
+    starts = sorted(plan)
+
+    def warm(sids):
+        for sid in sids:
+            with open(data.paths[sid], "rb") as f:
+                while f.read(64 << 20):
+                    pass
+
     def worker():
         try:
-            for g in groups:
+            if starts:
+                threading.Thread(target=warm, args=(plan[starts[0]],), daemon=True).start()
+            for n, g in enumerate(groups):
+                if n in plan:
+                    k = starts.index(n)
+                    if k + 1 < len(starts):
+                        threading.Thread(target=warm, args=(plan[starts[k + 1]],), daemon=True).start()
                 q.put(data.collate(g))
         except BaseException as e:  # 傳返畀主線程，唔係主線程會永遠等落去
             q.put(e)

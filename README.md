@@ -1,55 +1,78 @@
 # gemma2asr
 
-用凍結嘅 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) audio encoder，加一個細 reader 做語音辨識（主力粵語，順便中文／英文）。
-靈感嚟自 [Embedding Gemma Transcribe](https://eg2.haku.sh/)（佢只做英文，Mac 專用）。
+用凍結嘅 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) audio encoder，加一個細 CTC reader 做廣東話語音辨識。
+靈感嚟自 [Embedding Gemma Transcribe](https://eg2.haku.sh/)（佢只做英文）。
+
+**最新版本 learned_r6**（2,080 萬參數，720 小時數據）：RTX 5070 Ti 上約 **850 倍即時**（SenseVoice-Small 約 3 倍慢）。
+
+| 測試集（greedy ／ +LM） | learned_r6 | SenseVoice-Small |
+|---|---|---|
+| 讀稿 + 粵英夾雜 | 11.5% ／ 11.1% | **9.7%** |
+| MDCC 有聲書 | 5.8% ／ **4.9%** | 7.9% |
+| SpiCE 自然對話 | 36.3% ／ 36.8% | **28.0%** |
+
+- 總結：[REPORT.md](REPORT.md)
+- 每次實驗嘅詳細數字：[RESULTS.md](RESULTS.md)
 
 ## 原理
 
 ```
-16kHz 音頻 → audio_tower + embed_audio（凍結）→ 每 40ms 一格 512 維 feature
-           → reader（約 11M 參數，要 train）→ 每格 768 維向量
-           → 同字典每個字嘅 text embedding（凍結）比 cosine → CTC
+16kHz 音頻 → audio_tower（凍結）→ 攞第 6／9／12 層 + embed_audio 輸出，每層 PCA 256 維
+           → 權重加埋 → reader（6 層 Transformer + depthwise conv）→ CTC（中文逐字、英文逐詞）
 ```
 
-中文逐個字做單位，英文逐個詞。只有 reader 會 train，encoder 只係預先行一次，將 feature 存落 shard。
-
-## Spike 0 結果（本機 RTX 5070 Ti）
-
-`scripts/spike0.py`：12 段錄音（粵／普／英／日各 3 段）
-
-| 測試 | 冇 prompt | `Document` prompt |
-|---|---|---|
-| 成段錄音 → 揀返啱嗰句（top-1） | 9/12 | 11/12 |
-| 1 秒窗口 → 最近 5 個字有講緊嘅字 | 90% | 97%（隨機 45%） |
-
-英文最清楚，1 秒窗口幾乎逐個詞對得上；粵語最弱，會偏向「唔、冇、哋」呢啲常見字。
+只有 reader 會 train。encoder 預先行一次，將 feature 存落 shard（`extract.py --layers --pca --fp8`）。
+train 時加粵拼 CTC 輔助 head（`train.py --jy-weight 0.3`），推理唔用。
 
 ## 用法
 
-Colab：打開 `notebooks/train_colab.ipynb`，由頭行到尾。
-
-本機（uv）：
-
 ```bash
-uv sync
-uv run python scripts/spike0.py
-uv run python scripts/extract.py --dataset daily --out data/feats/daily
-uv run python scripts/build_vocab.py data/feats/daily --out data/vocab.pt
-uv run python scripts/train.py data/feats/daily --vocab data/vocab.pt --out runs/frozen
-uv run python scripts/transcribe.py runs/frozen/best.pt samples/*.wav
+uv sync                    # 推理
+uv sync --extra train      # train（多咗 ToJyutping）
 ```
 
-`train.py --head`：`frozen`（原本方法）、`tuned`（字典 embedding 一齊 train）、`learned`（普通 CTC 分類頭，做對照組）。
+轉錄（model 資料夾 = `scripts/export_hf.py` 出嘅 `model.safetensors` + `config.json`，或者 train 出嚟嘅 `.pt`）：
+
+```bash
+uv run python scripts/transcribe.py hf/gemma2asr-yue samples/*.wav
+uv run --with sounddevice python scripts/live.py --ckpt hf/gemma2asr-yue
+```
+
+```python
+from g2asr.encoder import Encoder
+from g2asr.infer import load_reader, transcribe_batch
+from g2asr.text import join_units
+
+enc = Encoder()
+model, units = load_reader("hf/gemma2asr-yue")
+print(join_units(transcribe_batch(enc, model, units, [wav_16k])[0]))
+```
+
+Train（Colab A100，見 `scripts/round6.sh`）：
+
+```bash
+python scripts/extract.py --dataset mdcc --out data/feats/mdcc_l4 --max-hours 30 --layers 6,9,12,0
+python scripts/fit_pca.py data/feats/mdcc_l4 --layers 6,9,12,0 --k 256 --out data/pca_6_9_12_0.pt
+python scripts/extract.py --dataset mdcc --out data/feats6/mdcc --layers 6,9,12,0 --pca data/pca_6_9_12_0.pt --fp8
+python scripts/train.py data/feats6/* --vocab data/vocab_r4.pt --out runs/learned_r6 --head learned --jy-weight 0.3
+python scripts/export_hf.py runs/learned_r6/best.pt --out hf/gemma2asr-yue
+```
+
+數據大過 RAM：`train.py --mmap`（分組讀 + 預讀；但 Colab 磁碟慢，會慢 2–3 倍）。
 
 ## 數據
 
-| 名 | 來源 | 備註 |
-|---|---|---|
-| `wordshk` | AlienKevin/wordshk_cantonese_speech | 約 11.5 萬句，words.hk 例句同釋義 |
-| `mixed` | AlienKevin/mixed_cantonese_and_english_speech | 約 1.4 萬句粵英夾雜 |
-| `daily` | ziyou-li/cantonese_daily | 約 4 千句日常粵語 |
+| 名 | 來源 | 小時 | 授權（數據集頁面） |
+|---|---|---|---|
+| `wordshk` | AlienKevin/wordshk_cantonese_speech | 104 | CC BY 4.0 |
+| `mixed` | AlienKevin/mixed_cantonese_and_english_speech | 34 | 冇寫 |
+| `daily` | ziyou-li/cantonese_daily | 4 | CC BY-NC-ND 4.0 |
+| `mdcc` | ming030890/mdcc | 57 | HF 頁面冇寫 |
+| `radio_*` | alvanlii/cantonese-radio（gated，要 `hf auth login`） | 519（+500） | 冇寫；電台節目 |
 
-直接讀 Hugging Face 自動轉好嘅 parquet，唔使 `datasets`／torchcodec。
-`samples/` 係 Gaijincall 嘅測試錄音，參考字幕由 SenseVoice 出（未人手校對）。
+電台數據用數據集入面 Whisper 同 SenseVoice 兩個轉錄互相驗證（CER < 25%），用 SenseVoice 版本做標籤。
+測試：MDCC test、[SpiCE](https://spice-corpus.readthedocs.io/)（CC BY 4.0）。
 
-所有模型 cache 放 `models/`（Colab 用 `G2ASR_MODELS` 指去 Drive）。
+因為部分數據係非商業或者冇註明授權，model 權重只建議作研究／非商業用途。
+
+所有模型 cache 放 `models/`（`G2ASR_MODELS` 可以改）。

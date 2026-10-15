@@ -3,6 +3,9 @@
 逐句行 reader 同埋長短句混埋做 batch（好多 padding）會慢兩三倍。
 """
 
+import json
+from pathlib import Path
+
 import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -16,6 +19,14 @@ BATCH = 16  # 再大反而慢（長句多時頂爆 VRAM）
 
 
 def load_reader(ckpt_path: str) -> tuple[Reader, list[str]]:
+    """train 出嚟嘅 .pt，或者 scripts/export_hf.py 出嘅資料夾（model.safetensors + config.json）。"""
+    path = Path(ckpt_path)
+    if path.is_dir():
+        from safetensors.torch import load_file
+        meta = json.loads((path / "config.json").read_text(encoding="utf-8"))
+        model = Reader(torch.zeros(meta["vocab_size"], meta["emb_dim"]), **meta["reader"]).cuda().eval()
+        model.load_state_dict(load_file(path / "model.safetensors"))
+        return model, meta["units"]
     ck = torch.load(ckpt_path, weights_only=False)
     model = Reader(ck["vocab_emb"], **ck["config"]).cuda().eval()
     model.load_state_dict(ck["model"])
