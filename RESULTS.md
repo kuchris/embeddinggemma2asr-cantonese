@@ -405,3 +405,23 @@ PCA 喺 MDCC 30 小時 200 萬格上面計：保留變異 第 6 層 91.4%、第 
 - r5jy → r6（同樣 batch 方式、同樣粵拼，只差 4 層 feature）：全部再好 0.2–0.8 點；MDCC +LM 首次低過 5%。
 - 學到嘅層權重（第 6／9／12 層／原本）：`0.31 / 0.26 / 0.22 / 0.21`。
 - 推理：Encoder.frames 多攞 3 層 hidden state 再做 PCA（幾個矩陣乘法），速度差唔多。
+
+### 全數據加碼：learned_r6b（1,238 小時 = r6 + 518 小時電台，同樣設定）
+
+多抽 3 條電台流程（parquet offset 2／6／10，同之前 0／4／8 唔重疊）：171 + 175 + 172 小時。
+107GB fp8 feature 大過 A100 RAM（83GB），所以用 `train.py --mmap`（分組讀 + 預讀下一組）；
+Colab 磁碟每秒約 150–200MB，每步約 0.63 秒（預先載入約 0.24 秒），12 epoch（21,660 步）約 3.8 小時。
+
+| | learned_r6（720h） | **learned_r6b（1,238h）** | SenseVoice GPU |
+|---|---|---|---|
+| 驗證 CER（最好） | 7.90% | **6.38%** | |
+| 原本 test greedy ／ +LM | 11.51% ／ 11.13% | **10.59%** ／ 10.87% | 9.7% |
+| MDCC test greedy ／ +LM | 5.8% ／ 4.9% | **5.3% ／ 4.7%** | 7.9% |
+| SpiCE 對話（VAD）greedy ／ +LM | 36.3% ／ 36.8% | **34.1%** ／ 35.4% | 28.0% |
+
+- 多 518 小時：驗證 −1.5 點、對話 −2.2 點——**數據仲係最有效**。
+- 4-gram LM 開始拖後腿（原本 test、SpiCE 加 LM 反而差）；只有 MDCC（LM 用 MDCC train 字幕整）仲有幫助。建議用 greedy。
+- 本機（RTX 5070 Ti）MDCC 2000 句 greedy 5.25%，約 750–850× 即時。
+- 已上載 Hugging Face（private）：`kuchris/embeddinggemma2asr-cantonese`。
+
+**成本**：第六輪（壓縮測試 + 重抽 1,238 小時 + r6 + r6b，包括兩次重開 r6b）約 51 units，餘額 98.2。

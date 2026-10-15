@@ -6,16 +6,18 @@ Fast Cantonese speech recognition from the **frozen** audio encoder of
 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2), plus a small CTC reader.
 Inspired by [Embedding Gemma Transcribe](https://eg2.haku.sh/), which does the same for English.
 
-**Latest model, learned_r6** (20.8M parameters, 720 hours of training data): about **850× real time** on an
-RTX 5070 Ti, roughly 3× faster than SenseVoice-Small on the same GPU.
+**Latest model, learned_r6b** (20.8M parameters, 1,238 hours of training data): roughly **750–850× real time** on an
+RTX 5070 Ti, about 3× faster than SenseVoice-Small on the same GPU.
+Weights: [kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese) (private for now).
 
-| Test set (greedy / with 4-gram LM) | learned_r6 | SenseVoice-Small |
+| Test set (greedy / with 4-gram LM) | learned_r6b | SenseVoice-Small |
 |---|---|---|
-| Read speech + Cantonese–English code-switching | 11.5% / 11.1% | **9.7%** |
-| MDCC (audiobooks) | 5.8% / **4.9%** | 7.9% |
-| SpiCE (spontaneous conversation) | 36.3% / 36.8% | **28.0%** |
+| Read speech + Cantonese–English code-switching | 10.6% / 10.9% | **9.7%** |
+| MDCC (audiobooks) | 5.3% / **4.7%** | 7.9% |
+| SpiCE (spontaneous conversation) | 34.1% / 35.4% | **28.0%** |
 
 Character error rate; lower is better. MDCC is in-domain for our model but zero-shot for SenseVoice.
+Greedy decoding is recommended; the 4-gram LM now only helps on MDCC.
 
 - Project report: [REPORT.md](REPORT.md) (Cantonese)
 - Detailed numbers for every experiment: [RESULTS.md](RESULTS.md) (Cantonese)
@@ -63,8 +65,8 @@ Train (Colab A100; see `scripts/round6.sh` for the full pipeline):
 python scripts/extract.py --dataset mdcc --out data/feats/mdcc_l4 --max-hours 30 --layers 6,9,12,0
 python scripts/fit_pca.py data/feats/mdcc_l4 --layers 6,9,12,0 --k 256 --out data/pca_6_9_12_0.pt
 python scripts/extract.py --dataset mdcc --out data/feats6/mdcc --layers 6,9,12,0 --pca data/pca_6_9_12_0.pt --fp8
-python scripts/train.py data/feats6/* --vocab data/vocab_r4.pt --out runs/learned_r6 --head learned --jy-weight 0.3
-python scripts/export_hf.py runs/learned_r6/best.pt --out hf/embeddinggemma2asr-cantonese
+python scripts/train.py data/feats6/* --vocab data/vocab_r4.pt --out runs/learned_r6b --head learned --jy-weight 0.3 --mmap
+python scripts/export_hf.py runs/learned_r6b/best.pt --out hf/embeddinggemma2asr-cantonese
 ```
 
 If the training data does not fit in RAM, use `train.py --mmap`. It reads shards from disk in groups and prefetches
@@ -78,7 +80,7 @@ the next group, but on Colab's disk it is still 2–3× slower than loading ever
 | `mixed` | AlienKevin/mixed_cantonese_and_english_speech | 34 | not stated |
 | `daily` | ziyou-li/cantonese_daily | 4 | CC BY-NC-ND 4.0 |
 | `mdcc` | ming030890/mdcc | 57 | not stated on the HF page |
-| `radio_*` | alvanlii/cantonese-radio (gated; needs `hf auth login`) | 519 (+500) | not stated; radio broadcasts |
+| `radio_*` | alvanlii/cantonese-radio (gated; needs `hf auth login`) | 1,037 | not stated; radio broadcasts |
 
 For the radio data, an utterance is kept only when the dataset's Whisper and SenseVoice transcripts agree
 (CER < 25%); the SenseVoice transcript is used as the label.

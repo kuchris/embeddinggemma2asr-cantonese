@@ -5,15 +5,16 @@
 ## 一句講晒
 
 凍結 [EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) 嘅 audio encoder，喺上面 train 一個
-2,080 萬參數嘅 CTC reader。最新版本（learned_r6）喺 RTX 5070 Ti 上約 **850 倍即時**，比 SenseVoice-Small 快約 3 倍；
-有聲書錯誤率 **4.9%**，低過 SenseVoice（7.9%）；但自然對話仍然輸（36% vs 28%）。
+2,080 萬參數嘅 CTC reader。最新版本（learned_r6b，1,238 小時數據）喺 RTX 5070 Ti 上約 **750–850 倍即時**，
+比 SenseVoice-Small 快約 3 倍；有聲書錯誤率 **4.7%**，低過 SenseVoice（7.9%）；但自然對話仍然輸（34% vs 28%）。
+權重：[kuchris/embeddinggemma2asr-cantonese](https://huggingface.co/kuchris/embeddinggemma2asr-cantonese)（暫時 private）。
 
 ## 動機
 
 [Embedding Gemma Transcribe](https://eg2.haku.sh/) 示範咗：EmbeddingGemma 2 雖然係 embedding model，但佢個 audio encoder
 夠好，加個細 reader 就可以做英文語音辨識，而且好快。我哋想知粵語做唔做到，同埋可以追到幾近 Google／SenseVoice。
 
-## 最終架構（learned_r6）
+## 最終架構（learned_r6／r6b）
 
 ```
 16kHz 音頻
@@ -26,22 +27,22 @@
  （train 時另有粵拼 CTC 輔助 head，推理唔用）
 ```
 
-可選：CTC prefix beam search + 4-gram LM（純 Python）。
+可選：CTC prefix beam search + 4-gram LM（純 Python）。r6b 之後 LM 只喺 MDCC 有幫助，建議用 greedy。
 
 ## 結果
 
 錯誤率（CER，越低越好）。greedy ／ 加 LM。SenseVoice-Small 同一張 GPU、同一批音頻。
 
-| 測試集 | learned_r4 | **learned_r6** | SenseVoice-Small |
-|---|---|---|---|
-| 原本 test（讀稿 + 粵英夾雜，1,030 句） | 12.21% ／ 11.57% | **11.51% ／ 11.13%** | 9.7% |
-| MDCC test（有聲書，2,000 句） | 6.6% ／ 5.7% | **5.8% ／ 4.9%** | 7.9% |
-| SpiCE（溫哥華雙語人士自然訪談） | 38.0% ／ 38.5% | **36.3% ／ 36.8%** | 28.0% |
-| 速度（greedy，本機 RTX 5070 Ti） | 約 845× 即時 | 約 850× 即時 | 約 280–365× |
+| 測試集 | learned_r4 | learned_r6 | **learned_r6b** | SenseVoice-Small |
+|---|---|---|---|---|
+| 原本 test（讀稿 + 粵英夾雜，1,030 句） | 12.21% ／ 11.57% | 11.51% ／ 11.13% | **10.59%** ／ 10.87% | 9.7% |
+| MDCC test（有聲書，2,000 句） | 6.6% ／ 5.7% | 5.8% ／ 4.9% | **5.3% ／ 4.7%** | 7.9% |
+| SpiCE（溫哥華雙語人士自然訪談） | 38.0% ／ 38.5% | 36.3% ／ 36.8% | **34.1%** ／ 35.4% | 28.0% |
+| 速度（greedy，本機 RTX 5070 Ti） | 約 845× 即時 | 約 850× 即時 | 約 750–850× 即時 | 約 280–365× |
 
 注意：
 - MDCC 對我哋係同類數據（train 過 MDCC train），對 SenseVoice 係 zero-shot。
-- 519 小時電台數據嘅標籤係 SenseVoice 出嘅，即係部分係「蒸餾」SenseVoice，對話類好難超越佢。
+- 電台數據（r6b 有 1,037 小時）嘅標籤係 SenseVoice 出嘅，即係部分係「蒸餾」SenseVoice，對話類好難超越佢。
 
 ## 每一輪做咗咩、學到咩
 
@@ -53,7 +54,7 @@
 | — | LLM 改字（Qwen3.5、Gemma 4）、Gemma 4 直接轉錄、N-best rescoring | | 全部唔值得（變差或者只好 0.5 點，慢好多） |
 | 5 | 粵拼輔助 CTC；細規模試中間層 | 720h | 粵拼單獨只好 0–0.3 點；多層相對好約 9%，第 6 層權重最高 |
 | 6 | 4 層 + PCA + fp8 + 粵拼 | 720h | 全部測試集再好 0.2–0.8 點；MDCC +LM 首次低過 5% |
-| 6b | 同上，加 500 小時電台 | 1,220h | 進行中 |
+| 6b | 同上，加 518 小時電台 | 1,238h | 驗證 7.9% → 6.4%；對話 36.3% → 34.1%；LM 開始拖後腿 |
 
 ### 有用
 - **數據**：真人、自然對話數據係最大推動力。143h → 720h 令對話錯誤率跌 10 點。
@@ -71,17 +72,16 @@
 ## 成本
 
 全部用 Colab（Pro）A100，約 5.3 compute units／小時。第四輪約 22 units；第五輪約 22 units（包括一次 VM 斷線重做）；
-第六輪約 35 units（包括多抽 500 小時）。
+第六輪約 51 units（包括多抽 518 小時，同埋 r6b 用 mmap 慢咗）。
 
 踩過嘅坑：Colab VM 冇 kernel 活動會被收機（要定時 ping）；數據大過 RAM 時 Colab 磁碟太慢（每秒約 150–200MB），
 mmap train 慢 3 倍。
 
 ## 下一步
 
-1. **learned_r6b（1,220 小時）** 結果：睇多 500 小時仲有幾多改善。
-2. **3,000 小時**：電台數據集仲有大約 6,000 小時未用；要 RAM 大（> 200GB）或者磁碟快嘅機器。
-3. 更準嘅老師（標籤品質決定上限）。
-4. 數據多咗之後再試大啲嘅 reader。
+1. **3,000 小時**：電台數據集仲有大約 6,000 小時未用；要 RAM 大（> 200GB）或者磁碟快嘅機器。
+2. 更準嘅老師（標籤品質決定上限）。
+3. 數據多咗之後再試大啲嘅 reader；同埋換一個更好嘅 LM（4-gram 已經跟唔上）。
 
 ## 授權
 
