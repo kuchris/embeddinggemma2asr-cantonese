@@ -22,12 +22,13 @@ from collections import deque
 
 import numpy as np
 import torch
+from rapidfuzz.distance import Levenshtein
 from silero_vad import VADIterator, load_silero_vad
 
 from g2asr.encoder import SAMPLE_RATE, Encoder
 from g2asr.infer import load_reader, transcribe_batch
 from g2asr.lm import NGramLM
-from g2asr.text import join_units
+from g2asr.text import LATIN, join_units
 from g2asr.vad import MAX_SEC
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -72,40 +73,102 @@ def tail(text: str, room: int) -> str:
     return text
 
 
-line = ""  # --plain：而家呢行已經定咗嘅字（自己換行，先可以喺行尾即時更新）
+def fit(text: str, room: int) -> str:
+    """由頭開始留，留到夠位為止。"""
+    out = ""
+    for c in text:
+        if width(out + c) > room:
+            break
+        out += c
+    return out
+
+
+# --plain：定咗嘅字只寫一次（之後唔再郁，交畀終端機自己換行）；淨係行尾未定嘅字會覆蓋，
+# 用 ESC 7／ESC 8（記住／返去游標位置）+ ESC[J（清到畫面尾）。
+col = 0  # 估計游標喺第幾格：未定嘅字唔可以換行，換行令畫面捲動之後，記住嘅位置會錯
+last = ""  # 最後寫咗嘅字（英文詞之間要加空格）
+
+
+def joined(us: list[str]) -> str:
+    """接住之前寫咗嘅嘢：英文詞之間加空格（同 join_units 一樣）。"""
+    text = join_units(us)
+    return " " + text if text and LATIN.match(last) and LATIN.match(text[0]) else text
+
+
+def write_plain(fixed: list[str], moving: list[str], end: str = ""):
+    global col, last
+    cols = shutil.get_terminal_size().columns
+    text = joined(fixed) + end
+    for c in text:
+        w = width(c)
+        col = w if col + w > cols else col + w
+    last = text[-1] if text else last
+    more = fit(joined(moving), cols - col - 1)
+    print(f"\0338\033[J{text}\0337" + (f"\033[2m{more}\033[0m" if more else ""), end="", flush=True)
+
+
+# local agreement：連續兩次即時轉錄都一樣嘅開頭先當「定咗」，之後唔再改（最終版本都保留）
+prev: list[str] = []
+stable: list[str] = []
+printed = 0  # --plain：今句已經寫咗幾多個定咗嘅單位
+
+
+def common_prefix(a: list[str], b: list[str]) -> list[str]:
+    n = 0
+    while n < min(len(a), len(b)) and a[n] == b[n]:
+        n += 1
+    return a[:n]
 
 
 def show_partial(audio: np.ndarray):
-    """講緊嘢：greedy 轉錄到而家為止嘅部分，覆蓋同一行。"""
-    text = join_units(transcribe_batch(enc, model, vocab, [audio])[0])
-    room = shutil.get_terminal_size().columns - 1
-    shown = tail(line + text, room) if args.plain else f"  … {tail(text, room - 4)}"
-    print(f"\r\033[K{shown}", end="", flush=True)
+    """講緊嘢：greedy 轉錄到而家為止嘅部分，覆蓋同一行；未定嘅字用暗色。"""
+    global prev, stable, printed
+    hyp = transcribe_batch(enc, model, vocab, [audio])[0]
+    agreed = common_prefix(prev, hyp)
+    if len(agreed) > len(stable) and agreed[:len(stable)] == stable:
+        stable = agreed
+    prev = hyp
+    moving = hyp[len(common_prefix(stable, hyp)):]  # 呢幾個字仲會變
+    if args.plain:
+        write_plain(stable[printed:], moving)
+        printed = len(stable)
+        return
+    fixed, text = join_units(stable), join_units(stable + moving)
+    shown = tail(text, shutil.get_terminal_size().columns - 5)
+    n = len(text) - len(fixed)
+    if 0 < n <= len(shown):
+        shown = f"{shown[:-n]}\033[2m{shown[-n:]}\033[0m"
+    print(f"\r\033[K  … {shown}", end="", flush=True)
+
+
+def keep_stable(hyp: list[str]) -> list[str]:
+    """最終版本（beam + LM）：定咗嘅字照用，只換佢哋後面嗰截。"""
+    if not stable:
+        return hyp
+    # stable 尾喺 hyp 入面對應嘅位置：hyp 邊個開頭同 stable 最似（打和就揀長度最接近嗰個）
+    end = min(range(len(hyp) + 1), key=lambda j: (Levenshtein.distance(stable, hyp[:j]), abs(j - len(stable))))
+    return stable + hyp[end:]
 
 
 def emit(audio: np.ndarray):
-    global line
+    global prev, stable, printed
     t0 = time.time()
-    text = join_units(transcribe_batch(enc, model, vocab, [audio], lm)[0])
-    print("\r\033[K", end="")  # 清走即時更新嗰行
+    units = keep_stable(transcribe_batch(enc, model, vocab, [audio], lm)[0])
     if args.plain:
-        line += f"{text} " if text else ""
-        room = shutil.get_terminal_size().columns - 1
-        while width(line) > room:  # 滿咗一行就定落嚟，剩低嘅留喺新一行
-            full = ""
-            for c in line:
-                if width(full + c) > room:
-                    break
-                full += c
-            print(full)
-            line = line[len(full):]
-        print(line, end="", flush=True)
-    elif text:
+        write_plain(units[printed:], [], " " if units else "")  # 句同句之間隔一格
+        prev, stable, printed = [], [], 0
+        return
+    prev, stable = [], []
+    text = join_units(units)
+    print("\r\033[K", end="")  # 清走即時更新嗰行
+    if text:
         print(f"[{len(audio) / SAMPLE_RATE:4.1f}s 句｜{(time.time() - t0) * 1000:3.0f}ms] {text}")
 
 
 def run(source):
     recent = deque(maxlen=PRE_ROLL)
+    if args.plain:
+        print("\0337", end="", flush=True)  # 記住起點，write_plain 由呢度寫
     speech: list[np.ndarray] | None = None
     for block in source:
         event = vad(torch.from_numpy(block))
